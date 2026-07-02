@@ -44,17 +44,33 @@ correctness reference against which all GPU backends are validated.
 
 ## Development Phases (Roadmap)
 
-1. **CPU Prototype** *(current change: `phase1-cpu-prototype`)* — scene model, mesh/material
-   import, NanoRT-style BVH, LOS + basic reflection, FSPL, JSON/CSV export.
-2. **RF Multipath** — multi-bounce reflections, material loss, phase/delay, receiver
-   capture sphere, coverage grid, GeoJSON/glTF export.
-3. **Python Bindings & Visualization** — pybind11 module, Scene/Simulator/Result
-   wrappers, NumPy/Pandas, PyVista/Plotly helpers.
-4. **Metal Backend** — MTLAccelerationStructure, iPad/macOS compute kernels, Swift bridge.
-5. **CUDA Backend** — OptiX ray tracing + CUDA RF kernels.
-6. **OpenCL Backend** — portable BVH traversal for non-NVIDIA GPUs.
-7. **Advanced RF** — diffraction, rain/vegetation attenuation, antenna arrays, MIMO
-   channel matrix, SINR/cell planning, moving receivers.
+Status as of 2026-07-02 (all core work verified by build+test unless noted):
+
+1. **CPU Prototype** ✅ — scene model, mesh/material import, NanoRT-style BVH, LOS +
+   reflection, FSPL, JSON/CSV export.
+2. **RF Multipath** ✅ — stochastic ray launch + capture sphere, multi-bounce, coverage
+   grid, GeoJSON/glTF export.
+3. **Python Bindings & Visualization** ✅ — pybind11 `rftracekit`, NumPy/pandas,
+   PyVista/Plotly helpers (arrays + advanced-RF settings exposed).
+4. **Metal Backend** ✅ — `MTLAccelerationStructure` + batched query API, CPU-vs-Metal parity.
+5. **CUDA Backend** ⚠️ — OptiX + CUDA kernels written, flag-gated; **UNVERIFIED** (no
+   NVIDIA/OptiX host); to validate on NVIDIA hardware.
+6. **OpenCL Backend** ✅ — custom flat-BVH traversal kernel, CPU-vs-OpenCL parity (Apple OpenCL).
+7. **Advanced RF** ✅ — knife-edge diffraction, rain/gaseous/vegetation attenuation, antenna
+   arrays + beam steering, MIMO channel + capacity, SINR/cell planning, route simulation.
+
+**Beyond the roadmap (also done):**
+- **Core geospatial IO** — georeferencing; GeoJSON/CityJSON/OSM/MSI import; GeoTIFF-DEM
+  terrain (GDAL) + per-cell terrain-height coverage; CZML, 3D Tiles, GeoTIFF-heatmap, and
+  Parquet export. JSON formats always-on; GDAL/Parquet flag-gated.
+- Worked examples: `wifi_indoor`, `barbados_5g` (single + 6-sector, real OSM + open DEM),
+  antenna-clearance analysis.
+
+**Known gaps / not yet built:** CUDA validation on real hardware; a *batched* simulator path
+so GPU backends accelerate a full run (currently per-ray); Embree adapter (flag maps to CPU);
+Python bindings for the new IO importers/exporters and for route/MIMO results; Swift bindings +
+C API; CLI tools (`rftrace-cli`, `scene-validator`, `result-converter`); multi-edge diffraction;
+OSM `.osm` XML / PBF; hierarchical-LOD 3D Tiles; CI workflow.
 
 ## Project Conventions
 
