@@ -67,6 +67,10 @@ Status as of 2026-07-02 (all core work verified by build+test unless noted):
   wedge coefficient + transition function (validated primitive); polarization mismatch +
   depolarizing reflection; per-path Doppler (routes); ray-launch multipath coverage
   (reflections). All additive/default-neutral; analytic-reference tested.
+- **Python IO surface** — the new importers/exporters, route (`run_route`), and MIMO
+  (`rf.mimo`) are exposed to Python; GDAL/Parquet-gated functions probe availability.
+- **OSM XML/PBF** import (XML always-on; PBF via libosmium, gated) and **hierarchical-LOD
+  3D Tiles** export.
 - Worked examples: `wifi_indoor`, `barbados_5g` (single + 6-sector, real OSM + open DEM),
   antenna-clearance analysis.
 
@@ -74,9 +78,8 @@ Status as of 2026-07-02 (all core work verified by build+test unless noted):
 so GPU backends accelerate a full run (currently per-ray); Embree adapter (flag maps to CPU);
 **UTD as a selectable diffraction path model** (`DiffractionModel::UTD` — the UTD primitive is
 done, the wedge-geometry/spreading wiring is not) and invoking reflection **depolarization** in
-the path builder; Python bindings for the new IO importers/exporters and for route/MIMO results;
-Swift bindings + C API; CLI tools (`rftrace-cli`, `scene-validator`, `result-converter`); OSM
-`.osm` XML / PBF; hierarchical-LOD 3D Tiles; CI workflow.
+the path builder; Swift bindings + C API; CLI tools (`rftrace-cli`, `scene-validator`,
+`result-converter`); CI workflow.
 
 ## Project Conventions
 
