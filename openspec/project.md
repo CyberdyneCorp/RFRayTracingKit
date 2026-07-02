@@ -63,14 +63,20 @@ Status as of 2026-07-02 (all core work verified by build+test unless noted):
 - **Core geospatial IO** — georeferencing; GeoJSON/CityJSON/OSM/MSI import; GeoTIFF-DEM
   terrain (GDAL) + per-cell terrain-height coverage; CZML, 3D Tiles, GeoTIFF-heatmap, and
   Parquet export. JSON formats always-on; GDAL/Parquet flag-gated.
+- **Advanced RF physics** — multi-edge diffraction (Bullington/Deygout, selectable); UTD
+  wedge coefficient + transition function (validated primitive); polarization mismatch +
+  depolarizing reflection; per-path Doppler (routes); ray-launch multipath coverage
+  (reflections). All additive/default-neutral; analytic-reference tested.
 - Worked examples: `wifi_indoor`, `barbados_5g` (single + 6-sector, real OSM + open DEM),
   antenna-clearance analysis.
 
 **Known gaps / not yet built:** CUDA validation on real hardware; a *batched* simulator path
 so GPU backends accelerate a full run (currently per-ray); Embree adapter (flag maps to CPU);
-Python bindings for the new IO importers/exporters and for route/MIMO results; Swift bindings +
-C API; CLI tools (`rftrace-cli`, `scene-validator`, `result-converter`); multi-edge diffraction;
-OSM `.osm` XML / PBF; hierarchical-LOD 3D Tiles; CI workflow.
+**UTD as a selectable diffraction path model** (`DiffractionModel::UTD` — the UTD primitive is
+done, the wedge-geometry/spreading wiring is not) and invoking reflection **depolarization** in
+the path builder; Python bindings for the new IO importers/exporters and for route/MIMO results;
+Swift bindings + C API; CLI tools (`rftrace-cli`, `scene-validator`, `result-converter`); OSM
+`.osm` XML / PBF; hierarchical-LOD 3D Tiles; CI workflow.
 
 ## Project Conventions
 
