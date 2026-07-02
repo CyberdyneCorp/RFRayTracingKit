@@ -38,7 +38,13 @@ namespace rftrace::rf {
 struct AntennaArray {
   std::vector<Vec3> elements;    ///< element positions (metres, local frame)
   double frequencyHz = 0.0;      ///< operating frequency (Hz)
-  double elementGainDbi = 0.0;   ///< gain of a single element (dBi)
+  double elementGainDbi = 0.0;   ///< peak gain of a single element (dBi)
+  /// Optional per-element boresight. Zero (default) = isotropic elements (front/
+  /// back symmetric). When set, a cos² front-hemisphere element pattern is applied
+  /// (floored behind boresight by `backLobeFloorDb`), giving a directional panel
+  /// that suppresses the back lobe — the behaviour of a real sector antenna.
+  Vec3 boresight{0.0, 0.0, 0.0};
+  double backLobeFloorDb = -25.0;
 
   std::size_t size() const { return elements.size(); }
 
@@ -145,11 +151,24 @@ inline double arrayFactorPowerLinear(const AntennaArray& arr,
 /// peak (steering) direction yields elementGainDbi + 10·log10(N). This is the
 /// value fed into the link-budget antenna term. Returns elementGainDbi when the
 /// array factor is (numerically) zero, avoiding -inf.
+/// Single-element gain (dBi) toward `dir`: `elementGainDbi` for isotropic elements
+/// (zero boresight), otherwise a cos² front-hemisphere pattern floored behind the
+/// boresight. Isotropic is the default, so existing arrays are unchanged.
+inline double elementGainDb(const AntennaArray& arr, const Vec3& dir) {
+  if (arr.boresight.squaredNorm() <= 0.0) return arr.elementGainDbi;
+  const double dn = dir.norm();
+  const double c = dn > 0.0 ? dir.dot(arr.boresight.normalized()) / dn : 0.0;
+  const double front = c > 1e-3 ? std::max(arr.backLobeFloorDb, 20.0 * std::log10(c))
+                                : arr.backLobeFloorDb;
+  return arr.elementGainDbi + front;
+}
+
 inline double steeredGainDbi(const AntennaArray& arr,
                              const Eigen::VectorXcd& weights, const Vec3& dir) {
+  const double elem = elementGainDb(arr, dir);
   const double p = arrayFactorPowerLinear(arr, weights, dir);
-  if (p <= 0.0) return arr.elementGainDbi;
-  return arr.elementGainDbi + 10.0 * std::log10(p);
+  if (p <= 0.0) return elem;
+  return elem + 10.0 * std::log10(p);
 }
 
 /// Convenience: steered gain (dBi) toward `dir` for an array whose main beam is

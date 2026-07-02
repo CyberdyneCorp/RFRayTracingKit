@@ -194,6 +194,11 @@ void bindAntenna(py::module_& m) {
       .def(py::init<>())
       .def_readwrite("frequency_hz", &rf::AntennaArray::frequencyHz)
       .def_readwrite("element_gain_dbi", &rf::AntennaArray::elementGainDbi)
+      .def_readwrite("back_lobe_floor_db", &rf::AntennaArray::backLobeFloorDb)
+      .def_property(
+          "boresight",
+          [](const rf::AntennaArray& a) { return vec3ToArray(a.boresight); },
+          [](rf::AntennaArray& a, const py::handle& v) { a.boresight = toVec3(v); })
       .def("size", &rf::AntennaArray::size);
 
   m.def(

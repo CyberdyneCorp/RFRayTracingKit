@@ -41,3 +41,9 @@ examples/wifi_indoor/wifi_indoor.png
 examples/wifi_indoor/wifi_indoor.html
 examples/wifi_indoor/wifi_paths.gltf
 examples/wifi_indoor/wifi_receivers.geojson
+
+# barbados_5g example: cached OSM data (large) + generated artifacts
+examples/barbados_5g/osm_bridgetown.json
+examples/barbados_5g/barbados_coverage.png
+examples/barbados_5g/barbados_3d.png
+examples/barbados_5g/barbados_coverage.geojson
