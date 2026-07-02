@@ -20,10 +20,11 @@ power array.
   row-major power values
 
 ### Requirement: Coverage CSV export
-The library SHALL export a coverage result to CSV as a grid of power values (or a long
-`row,col,x,y,power` table), with a documented no-signal sentinel.
+The library SHALL export a coverage result to CSV as a long table with the header
+`row,col,x,y,power` (one row per grid cell), using a documented no-signal sentinel for
+cells with no path.
 
-#### Scenario: Coverage CSV has one value per cell
+#### Scenario: Coverage CSV is a long per-cell table
 - **WHEN** a coverage result is exported to CSV
-- **THEN** the file SHALL contain one power value per grid cell, and no-signal cells SHALL
-  use the documented sentinel
+- **THEN** the file SHALL have a `row,col,x,y,power` header and one data row per grid cell,
+  and no-signal cells SHALL carry the documented sentinel in the `power` column

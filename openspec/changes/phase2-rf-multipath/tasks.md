@@ -28,7 +28,7 @@
 
 - [ ] 5.1 Add the coverage result model (power array + optional path-loss array + grid metadata)
 - [ ] 5.2 Implement coverage JSON export (grid metadata + row-major values)
-- [ ] 5.3 Implement coverage CSV export (documented layout + no-signal sentinel)
+- [ ] 5.3 Implement coverage CSV export (long `row,col,x,y,power` table + no-signal sentinel)
 - [ ] 5.4 Tests: coverage JSON contains grid+values, CSV one-value-per-cell, round-trip
 
 ## 6. GeoJSON Export (`geojson-export`)
@@ -40,13 +40,13 @@
 
 ## 7. glTF Export (`gltf-export`)
 
-- [ ] 7.1 Implement an in-tree glTF 2.0 writer for line primitives (one polyline per path)
+- [ ] 7.1 Implement an in-tree glTF 2.0 writer (nlohmann/json + embedded base64 buffer) for line primitives (one polyline per path)
 - [ ] 7.2 Add per-vertex color derived from path power; optional receiver points
 - [ ] 7.3 Tests: exported glTF re-imports via Assimp and exposes the geometry
 
 ## 8. Golden & Validation
 
-- [ ] 8.1 Golden: ray-launch aggregate power vs image method on Phase 1 golden scenes within tolerance (≤1 dB); document the ray budget
+- [ ] 8.1 Golden: sweep ray count vs capture radius on the Phase 1 golden scenes, pin the smallest budget reaching ≤1 dB agreement with the image method as test constants, and record the trade-off in the README
 - [ ] 8.2 Golden: coverage grid over a small scene with a stable expected pattern
 - [ ] 8.3 Add an `examples/coverage_grid` demo (coverage mode + GeoJSON/glTF export)
 - [ ] 8.4 Update README/docs with the new modes, exporters, and tolerances

@@ -72,11 +72,26 @@ Additive over the archived Phase 1 baseline. `SimulationSettings` gains `mode`, 
 coverage-grid fields with defaults preserving Phase 1 behavior (image method, point
 receivers). New exporters are independent entry points. No breaking changes to Phase 1 APIs.
 
-## Open Questions
+## Resolved Decisions
 
-- glTF debug export: in-tree writer vs a small vendored library — lean in-tree for
-  line/point primitives; revisit if mesh export is needed.
-- Coverage CSV layout: dense grid matrix vs long `row,col,x,y,power` table — pick one and
-  document (leaning long table for GIS friendliness).
-- Default ray budget and capture radius for the image-method-agreement tolerance — fix from
-  measurement during implementation.
+### D6. glTF debug export: in-tree writer
+glTF 2.0 is emitted by a small in-tree writer built on nlohmann/json with an embedded
+base64 buffer, producing line primitives (one polyline per ray path) and point primitives
+(receivers). Phase 2 needs only lines + points, so a dependency-free writer is proportional;
+the acceptance gate is re-importing the output through Assimp (already a dependency).
+Vendoring tinygltf was the alternative — deferred until mesh/material export is actually
+needed.
+
+### D7. Coverage CSV layout: long table
+Coverage CSV is a long table with header `row,col,x,y,power` (one row per cell). It ingests
+directly into QGIS/pandas, composes with the GeoJSON coverage export, and handles no-signal
+cells with a per-row sentinel. The dense H×W matrix was rejected: it loses coordinates and
+is awkward for GIS import. The JSON coverage export still carries the full array + grid
+metadata for array-oriented consumers.
+
+### D8. Ray budget / capture radius: measure, then pin
+During implementation we sweep ray count against capture radius on the archived golden
+scenes, pick the smallest budget that reaches ≤1 dB agreement with the image method, and
+hard-code those as documented test constants (with the measured trade-off recorded in the
+README). This keeps the agreement test fast and honest rather than hiding cost behind an
+oversized fixed budget.
