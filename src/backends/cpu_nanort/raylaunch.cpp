@@ -47,7 +47,8 @@ std::vector<std::vector<RFPath>> rayLaunch(const Scene& scene,
                                            const IBackend& backend,
                                            const Transmitter& tx,
                                            const std::vector<Receiver>& receivers,
-                                           const SimulationSettings& settings) {
+                                           const SimulationSettings& settings,
+                                           const PropagationContext* ctx) {
   const int nRx = static_cast<int>(receivers.size());
   std::vector<std::vector<RFPath>> out(nRx);
   // Per receiver: reflecting-surface signature -> index into out[r] (dedup).
@@ -88,7 +89,7 @@ std::vector<std::vector<RFPath>> rayLaunch(const Scene& scene,
           path.receiverId = receivers[r].id;
           path.type = PathType::Reflection;
           path.reflections = static_cast<int>(sig.size());
-          finishPath(path, tx, receivers[r], reflLoss);
+          finishPath(path, tx, receivers[r], reflLoss, ctx);
 
           // Dedup by reflecting-surface signature; keep the strongest.
           std::string key;

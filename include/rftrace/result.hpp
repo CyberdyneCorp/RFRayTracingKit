@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,13 @@ struct ReceiverResult {
   double delaySpreadNs = 0.0;
   double phaseRad = 0.0;
   std::vector<RFPath> paths;
+
+  // --- Phase 7 SINR / serving-cell (populated only when enableSinr) ---------
+  // Inert defaults leave archived results unchanged. `servingTransmitterId`
+  // stays empty and the metrics stay NaN until SINR is computed.
+  std::string servingTransmitterId;
+  double sinrDb = std::numeric_limits<double>::quiet_NaN();
+  double interferencePowerDbm = std::numeric_limits<double>::quiet_NaN();
 };
 
 /// Lightweight transmitter record carried into results for export.

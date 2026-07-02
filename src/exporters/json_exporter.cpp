@@ -6,6 +6,8 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "rftrace/rf/mimo.hpp"
+
 namespace rftrace::io {
 
 namespace {
@@ -53,6 +55,16 @@ std::string resultToJsonString(const RFResult& result) {
       jr["received_power_dbm"] = nullptr;
       jr["path_loss_db"] = nullptr;
       jr["delay_spread_ns"] = nullptr;
+    }
+
+    // Serving-cell / SINR fields are emitted only when SINR was computed
+    // (serving id set), so default results keep their archived schema.
+    if (!rx.servingTransmitterId.empty()) {
+      jr["serving_transmitter_id"] = rx.servingTransmitterId;
+      jr["sinr_db"] = std::isfinite(rx.sinrDb) ? json(rx.sinrDb) : json(nullptr);
+      jr["interference_power_dbm"] = std::isfinite(rx.interferencePowerDbm)
+                                         ? json(rx.interferencePowerDbm)
+                                         : json(nullptr);
     }
 
     jr["paths"] = json::array();
@@ -112,6 +124,17 @@ RFResult resultFromJsonString(const std::string& text) {
         rx.delaySpreadNs = jr.value("delay_spread_ns", 0.0);
         rx.phaseRad = jr.value("phase_rad", 0.0);
       }
+      if (jr.contains("serving_transmitter_id") &&
+          !jr.at("serving_transmitter_id").is_null()) {
+        rx.servingTransmitterId =
+            jr.value("serving_transmitter_id", std::string{});
+        if (jr.contains("sinr_db") && !jr.at("sinr_db").is_null())
+          rx.sinrDb = jr.at("sinr_db").get<double>();
+        if (jr.contains("interference_power_dbm") &&
+            !jr.at("interference_power_dbm").is_null())
+          rx.interferencePowerDbm =
+              jr.at("interference_power_dbm").get<double>();
+      }
       if (jr.contains("paths")) {
         for (const auto& jp : jr.at("paths")) {
           RFPath p;
@@ -168,6 +191,12 @@ std::string coverageToJsonString(const CoverageResult& coverage) {
   for (double v : coverage.pathLossDb)
     root["path_loss_db"].push_back(valueOrNull(v));
 
+  // SINR array is present only for SINR-enabled coverage runs.
+  if (!coverage.sinrDb.empty()) {
+    root["sinr_db"] = json::array();
+    for (double v : coverage.sinrDb) root["sinr_db"].push_back(valueOrNull(v));
+  }
+
   return root.dump(2);
 }
 
@@ -176,6 +205,79 @@ void exportCoverageJson(const CoverageResult& coverage,
   std::ofstream out(path);
   if (!out) throw std::runtime_error("cannot write coverage JSON to '" + path + "'");
   out << coverageToJsonString(coverage);
+}
+
+std::string routeToJsonString(const RouteResult& route) {
+  json root;
+  root["route_id"] = route.routeId;
+  root["simulation_id"] = route.simulationId;
+  root["frequency_hz"] = route.frequencyHz;
+
+  root["samples"] = json::array();
+  for (const auto& s : route.samples) {
+    json js;
+    js["index"] = s.index;
+    js["distance_m"] = s.distanceMeters;
+    js["position"] = vec3ToJson(s.position);
+    js["has_signal"] = s.hasSignal;
+    if (s.hasSignal) {
+      js["received_power_dbm"] = s.receivedPowerDbm;
+      js["path_loss_db"] = s.pathLossDb;
+      js["delay_spread_ns"] = s.delaySpreadNs;
+    } else {
+      js["received_power_dbm"] = nullptr;
+      js["path_loss_db"] = nullptr;
+      js["delay_spread_ns"] = nullptr;
+    }
+
+    // Serving-cell / SINR fields are emitted only when SINR was computed.
+    if (!s.servingTransmitterId.empty()) {
+      js["serving_transmitter_id"] = s.servingTransmitterId;
+      js["sinr_db"] = valueOrNull(s.sinrDb);
+      js["interference_power_dbm"] = valueOrNull(s.interferencePowerDbm);
+    }
+    root["samples"].push_back(std::move(js));
+  }
+
+  return root.dump(2);
+}
+
+void exportRouteJson(const RouteResult& route, const std::string& path) {
+  std::ofstream out(path);
+  if (!out) throw std::runtime_error("cannot write route JSON to '" + path + "'");
+  out << routeToJsonString(route);
+}
+
+std::string mimoToJsonString(const Eigen::MatrixXcd& channel,
+                             double snrLinear) {
+  json root;
+  const int rows = static_cast<int>(channel.rows());
+  const int cols = static_cast<int>(channel.cols());
+  root["rows"] = rows;   // n_rx
+  root["cols"] = cols;   // n_tx
+  root["snr_linear"] = snrLinear;
+  root["capacity_bps_hz"] = rf::capacity(channel, snrLinear);
+
+  json re = json::array(), im = json::array();
+  for (int r = 0; r < rows; ++r) {
+    json rowRe = json::array(), rowIm = json::array();
+    for (int c = 0; c < cols; ++c) {
+      rowRe.push_back(channel(r, c).real());
+      rowIm.push_back(channel(r, c).imag());
+    }
+    re.push_back(std::move(rowRe));
+    im.push_back(std::move(rowIm));
+  }
+  root["real"] = std::move(re);
+  root["imag"] = std::move(im);
+  return root.dump(2);
+}
+
+void exportMimoJson(const Eigen::MatrixXcd& channel, double snrLinear,
+                    const std::string& path) {
+  std::ofstream out(path);
+  if (!out) throw std::runtime_error("cannot write MIMO JSON to '" + path + "'");
+  out << mimoToJsonString(channel, snrLinear);
 }
 
 }  // namespace rftrace::io

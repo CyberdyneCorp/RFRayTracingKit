@@ -9,6 +9,7 @@
 #include "rftrace/antenna.hpp"
 #include "rftrace/geometry.hpp"
 #include "rftrace/material.hpp"
+#include "rftrace/rf/array.hpp"
 
 namespace rftrace {
 
@@ -35,6 +36,11 @@ struct Transmitter {
   double powerDbm = 43.0;
   AntennaPattern antenna = AntennaPattern::Omnidirectional();
   Polarization polarization = Polarization::Vertical;
+  /// Optional antenna array. When set, its steered gain replaces the single
+  /// `antenna` gain in the link budget. `beamSteering` is the main-beam
+  /// direction; a zero vector steers toward each path's departure direction.
+  std::optional<rf::AntennaArray> array;
+  Vec3 beamSteering{0, 0, 0};
 };
 
 struct Receiver {
@@ -42,6 +48,8 @@ struct Receiver {
   Vec3 position{0, 0, 0};
   AntennaPattern antenna = AntennaPattern::Omnidirectional();
   Polarization polarization = Polarization::Vertical;
+  std::optional<rf::AntennaArray> array;
+  Vec3 beamSteering{0, 0, 0};
 };
 
 /// The single backend-agnostic input to a simulation. Geometry is stored as a

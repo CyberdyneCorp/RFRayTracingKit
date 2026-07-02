@@ -1,11 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <string>
 
 #include "rftrace/backend.hpp"
 #include "rftrace/coverage.hpp"
 #include "rftrace/result.hpp"
+#include "rftrace/route.hpp"
 #include "rftrace/scene.hpp"
 
 namespace rftrace {
@@ -28,6 +30,33 @@ struct SimulationSettings {
   bool coherent = false;             ///< coherent vs incoherent power combining
   bool allowBackendFallback = true;  ///< fall back to CPU if backend absent
   std::string simulationId = "rftrace_sim";
+
+  // --- Phase 7 advanced RF (all additive and DEFAULT-OFF) -------------------
+  // With every flag below at its default, the per-path budget, results, and
+  // coverage are bit-for-bit identical to the archived Phase 1/2 behavior.
+  // Physics for these hooks lands in later Phase 7 sub-changes.
+
+  /// Enable single knife-edge (ITU-R P.526) diffraction over blocked LOS.
+  bool enableDiffraction = false;
+
+  /// Enable rain attenuation (ITU-R P.838); rate in mm/hr when enabled.
+  bool enableRain = false;
+  double rainRateMmPerHr = 0.0;
+
+  /// Enable gaseous (oxygen/water-vapour) attenuation (ITU-R P.676 approx).
+  bool enableGaseousAttenuation = false;
+
+  /// Enable foliage attenuation along path depth through vegetation-tagged
+  /// geometry (Weissberger / ITU-R P.833).
+  bool enableVegetation = false;
+
+  /// Enable SINR / serving-cell computation and SINR coverage.
+  bool enableSinr = false;
+  double noiseBandwidthHz = 20e6;  ///< receiver bandwidth B for kTB noise floor
+  double noiseFigureDb = 7.0;      ///< receiver noise figure NF (dB)
+  /// Optional fixed noise-floor override (dBm); NaN => derive from kTB + NF.
+  double noiseFloorDbmOverride =
+      std::numeric_limits<double>::quiet_NaN();
 };
 
 /// Runs an RF propagation simulation over a scene, producing per-receiver
@@ -47,6 +76,13 @@ class Simulator {
   /// Evaluate received power/path loss over a coverage grid, treating each cell
   /// centre as a receiver. Uses the deterministic image method per cell.
   CoverageResult runCoverage(const Scene& scene, const CoverageGrid& grid) const;
+
+  /// Simulate a moving receiver along a route: sample the route's polyline into
+  /// positions (spaced ~route.sampleSpacing), evaluate each as a point receiver
+  /// against the scene's transmitters, and collect an ordered per-sample series
+  /// (position + received power / path loss / delay spread, plus SINR when
+  /// enabled). Deterministic in the same way as run().
+  RouteResult runRoute(const Scene& scene, const Route& route) const;
 
  private:
   SimulationSettings settings_;

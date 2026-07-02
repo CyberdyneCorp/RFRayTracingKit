@@ -33,6 +33,14 @@ add_executable(rftrace_tests
   test_geojson.cpp
   test_gltf.cpp
   test_phase2_golden.cpp
+  test_phase7_regression.cpp
+  test_diffraction.cpp
+  test_attenuation.cpp
+  test_arrays.cpp
+  test_mimo.cpp
+  test_sinr.cpp
+  test_route.cpp
+  test_phase7_integration.cpp
   test_metal.cpp
   test_metal_parity.cpp
 )

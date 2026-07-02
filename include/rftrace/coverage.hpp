@@ -37,8 +37,16 @@ struct CoverageResult {
   std::vector<double> powerDbm;    ///< row-major, size rows*cols
   std::vector<double> pathLossDb;  ///< row-major, size rows*cols
 
+  /// SINR (dB) per cell, row-major. Populated only when SINR is enabled;
+  /// otherwise left empty. Unreached cells carry the `NoSignal` sentinel.
+  std::vector<double> sinrDb;
+
   double powerAt(int row, int col) const {
     return powerDbm[row * grid.cols + col];
+  }
+
+  double sinrAt(int row, int col) const {
+    return sinrDb[row * grid.cols + col];
   }
 };
 
