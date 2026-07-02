@@ -74,12 +74,13 @@ Status as of 2026-07-02 (all core work verified by build+test unless noted):
 - Worked examples: `wifi_indoor`, `barbados_5g` (single + 6-sector, real OSM + open DEM),
   antenna-clearance analysis.
 
+UTD is now a selectable diffraction path model (`DiffractionModel::UTD`, tracks knife-edge) and
+reflection **depolarization** is wired (opt-in via `enableDepolarization`).
+
 **Known gaps / not yet built:** CUDA validation on real hardware; a *batched* simulator path
 so GPU backends accelerate a full run (currently per-ray); Embree adapter (flag maps to CPU);
-**UTD as a selectable diffraction path model** (`DiffractionModel::UTD` — the UTD primitive is
-done, the wedge-geometry/spreading wiring is not) and invoking reflection **depolarization** in
-the path builder; Swift bindings + C API; CLI tools (`rftrace-cli`, `scene-validator`,
-`result-converter`); CI workflow.
+general multi-edge/wedge UTD path model (current UTD reuses the dominant-edge v as a half-plane);
+Swift bindings + C API; CLI tools (`rftrace-cli`, `scene-validator`, `result-converter`); CI workflow.
 
 ## Project Conventions
 
