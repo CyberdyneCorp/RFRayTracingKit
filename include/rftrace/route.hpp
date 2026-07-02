@@ -29,6 +29,12 @@ struct Route {
   std::string id = "route";
   std::vector<Vec3> waypoints;  ///< ordered polyline vertices
   double sampleSpacing = 1.0;   ///< target arc-length spacing between samples (m)
+  /// Optional constant receiver speed (m/s) used for per-path Doppler (D4). When
+  /// > 0 the receiver velocity magnitude is fixed to this speed and its direction
+  /// is taken from the sample-to-sample motion. When <= 0 (default) the velocity
+  /// is the per-step displacement itself (unit sample time), so its magnitude
+  /// tracks the sample spacing. A static / single-sample route yields 0 Doppler.
+  double speedMps = 0.0;
   /// Receiver antenna / polarization applied at every sample (default omni).
   AntennaPattern antenna = AntennaPattern::Omnidirectional();
   Polarization polarization = Polarization::Vertical;
@@ -88,6 +94,9 @@ struct RouteSample {
   double receivedPowerDbm = 0.0;
   double pathLossDb = 0.0;
   double delaySpreadNs = 0.0;
+  /// Aggregate Doppler for this sample (D4): the maximum |f_d| over the sample's
+  /// paths (Hz). 0 for a static / single-sample route.
+  double dopplerHz = 0.0;
 
   // Populated only when settings.enableSinr; inert otherwise.
   std::string servingTransmitterId;

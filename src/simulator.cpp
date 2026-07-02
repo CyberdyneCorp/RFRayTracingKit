@@ -12,6 +12,8 @@
 #include "rftrace/detail/propagation.hpp"
 #include "rftrace/rf/channel.hpp"
 #include "rftrace/rf/diffraction.hpp"
+#include "rftrace/rf/diffraction_multi.hpp"
+#include "rftrace/rf/doppler.hpp"
 #include "rftrace/rf/reflection.hpp"
 
 namespace rftrace {
@@ -212,6 +214,56 @@ std::optional<EdgeCandidate> evaluateEdge(const IBackend& backend,
   return EdgeCandidate{v, point};
 }
 
+// Number of interior samples taken along the tx→rx horizontal baseline when
+// building a terrain+building profile for multi-edge diffraction.
+constexpr int kDiffractionProfileSamples = 128;
+
+// Build a vertical-plane profile between tx and rx by sampling the maximum
+// surface height at each interior horizontal position: a ray is cast straight
+// down from far above and its first hit gives the obstacle top there. Samples
+// that hit no geometry contribute no obstacle. Distances are horizontal (m);
+// heights use the world z datum (same as tx/rx z).
+rf::TerrainProfile buildTerrainProfile(const IBackend& backend, const Vec3& tx,
+                                       const Vec3& rx) {
+  rf::TerrainProfile prof;
+  prof.txHeightMeters = tx.z();
+  prof.rxHeightMeters = rx.z();
+  const Vec3 txXY{tx.x(), tx.y(), 0.0};
+  const Vec3 rxXY{rx.x(), rx.y(), 0.0};
+  const double D = (rxXY - txXY).norm();
+  prof.totalDistanceMeters = D;
+  if (D <= kEps) return prof;
+
+  const Vec3 dirXY = (rxXY - txXY) / D;
+  constexpr double kZTop = 1e6;  // ray origin well above any plausible surface
+  for (int i = 1; i <= kDiffractionProfileSamples; ++i) {
+    const double f = static_cast<double>(i) / (kDiffractionProfileSamples + 1);
+    const Vec3 xy = txXY + (f * D) * dirXY;
+    const Ray down(Vec3{xy.x(), xy.y(), kZTop}, Vec3{0.0, 0.0, -1.0}, kEps);
+    const Hit h = backend.closestHit(down);
+    if (!h.valid) continue;
+    prof.obstacles.push_back({f * D, kZTop - h.t});
+  }
+  return prof;
+}
+
+// Diffraction loss (dB) for a blocked link with a known dominant edge `v`.
+// Default (SingleEdge / no context) is the ITU-R P.526 knife-edge loss; the
+// multi-edge models build a terrain profile and apply Bullington / Deygout,
+// falling back to the single edge when the profile has no obstacles.
+double diffractionLossDb(const IBackend& backend, const Vec3& tx, const Vec3& rx,
+                         double v, double wavelength,
+                         const PropagationContext* ctx) {
+  const double single = rf::knifeEdgeLossDb(v);
+  if (!ctx || ctx->settings.diffractionModel == DiffractionModel::SingleEdge)
+    return single;
+  const rf::TerrainProfile prof = buildTerrainProfile(backend, tx, rx);
+  if (prof.obstacles.empty()) return single;
+  return ctx->settings.diffractionModel == DiffractionModel::Bullington
+             ? rf::bullingtonLossDb(prof, wavelength)
+             : rf::deygoutLossDb(prof, wavelength);
+}
+
 }  // namespace
 
 std::optional<RFPath> diffractionPath(const Scene& scene,
@@ -244,7 +296,9 @@ std::optional<RFPath> diffractionPath(const Scene& scene,
   p.type = PathType::Diffraction;
   p.diffractions = 1;
   p.points = {tx.position, best.point, rx.position};
-  finishPath(p, tx, rx, rf::knifeEdgeLossDb(best.v), ctx);
+  const double loss = diffractionLossDb(backend, tx.position, rx.position,
+                                        best.v, wavelength, ctx);
+  finishPath(p, tx, rx, loss, ctx);
   return p;
 }
 
@@ -382,6 +436,101 @@ RFResult Simulator::run(const Scene& scene) const {
   return result;
 }
 
+namespace {
+
+// Write an aggregated cell result into the coverage arrays at row-major `idx`.
+// Unreached cells (no signal) keep the NoSignal sentinel already stored there.
+void storeCell(CoverageResult& cov, int idx, ReceiverResult& rr,
+               const SimulationSettings& settings) {
+  detail::aggregate(rr, settings.coherent);
+  if (!rr.hasSignal) return;
+  cov.powerDbm[idx] = rr.receivedPowerDbm;
+  cov.pathLossDb[idx] = rr.pathLossDb;
+  if (settings.enableSinr) cov.sinrDb[idx] = computeSinr(rr, settings).sinrDb;
+}
+
+// Ray-launch multipath coverage (D5). Launches rays ONCE per transmitter with
+// each grid cell treated as a capture point (radius ≈ cellSize/2, at the cell's
+// terrain/eval height) and accumulates the captured LOS + reflected power per
+// cell. Cells are indexed row-major to match the coverage arrays. Fully
+// shadowed cells (no LOS, no captured reflection) fall back to the per-cell
+// knife-edge / multi-edge diffraction detour when enableDiffraction is set.
+void fillCoverageMultipath(const Scene& scene, IBackend& backend,
+                           const CoverageGrid& grid,
+                           const SimulationSettings& settings,
+                           const detail::PropagationContext& ctx,
+                           CoverageResult& cov) {
+  std::vector<Receiver> cells;
+  cells.reserve(grid.cellCount());
+  for (int row = 0; row < grid.rows; ++row)
+    for (int col = 0; col < grid.cols; ++col) {
+      Receiver rx;
+      rx.id = "cell";
+      rx.position = grid.cellCenter(row, col);
+      cells.push_back(rx);
+    }
+
+  std::vector<ReceiverResult> rrs(cells.size());
+  for (std::size_t i = 0; i < cells.size(); ++i) {
+    rrs[i].receiverId = cells[i].id;
+    rrs[i].position = cells[i].position;
+  }
+
+  // LOS is deterministic and added per cell (rayLaunch returns only reflections).
+  for (std::size_t i = 0; i < cells.size(); ++i)
+    for (const Transmitter& tx : scene.transmitters())
+      if (auto los = detail::losPath(backend, tx, cells[i], &ctx))
+        rrs[i].paths.push_back(std::move(*los));
+
+  // Reflected multipath: one ray launch per transmitter over all capture cells.
+  for (const Transmitter& tx : scene.transmitters()) {
+    auto perCell = detail::rayLaunch(scene, backend, tx, cells, settings, &ctx);
+    for (std::size_t i = 0; i < cells.size(); ++i)
+      for (auto& p : perCell[i]) rrs[i].paths.push_back(std::move(p));
+  }
+
+  // Diffraction fill for fully shadowed cells (no LOS and no captured reflection).
+  if (settings.enableDiffraction)
+    for (std::size_t i = 0; i < cells.size(); ++i)
+      if (rrs[i].paths.empty())
+        for (const Transmitter& tx : scene.transmitters())
+          if (auto dif = detail::diffractionPath(scene, backend, tx, cells[i],
+                                                 tx.frequencyHz, &ctx))
+            rrs[i].paths.push_back(std::move(*dif));
+
+  for (std::size_t i = 0; i < cells.size(); ++i)
+    storeCell(cov, static_cast<int>(i), rrs[i], settings);
+}
+
+// Deterministic per-cell image-method coverage (the default): each cell centre
+// is an exact point receiver evaluated against LOS + specular reflections.
+void fillCoverageImageMethod(const Scene& scene, IBackend& backend,
+                             const CoverageGrid& grid,
+                             const SimulationSettings& settings,
+                             const detail::PropagationContext& ctx,
+                             CoverageResult& cov) {
+  for (int row = 0; row < grid.rows; ++row)
+    for (int col = 0; col < grid.cols; ++col) {
+      Receiver rx;
+      rx.id = "cell";
+      rx.position = grid.cellCenter(row, col);
+
+      ReceiverResult rr;
+      rr.receiverId = rx.id;
+      rr.position = rx.position;
+      for (const Transmitter& tx : scene.transmitters()) {
+        if (auto los = detail::losPath(backend, tx, rx, &ctx))
+          rr.paths.push_back(std::move(*los));
+        auto refl = detail::imageMethodReflections(
+            scene, backend, tx, rx, settings.maxReflections, &ctx);
+        for (auto& p : refl) rr.paths.push_back(std::move(p));
+      }
+      storeCell(cov, row * grid.cols + col, rr, settings);
+    }
+}
+
+}  // namespace
+
 CoverageResult Simulator::runCoverage(const Scene& scene,
                                       const CoverageGrid& grid) const {
   auto backend = makeBackend(settings_.backend, settings_.allowBackendFallback);
@@ -398,38 +547,63 @@ CoverageResult Simulator::runCoverage(const Scene& scene,
   if (settings_.enableSinr)
     cov.sinrDb.assign(grid.cellCount(), CoverageResult::NoSignal);
 
-  const detail::PropagationContext ctx{settings_, scene, *backend,
-                                       cov.frequencyHz};
-
-  for (int row = 0; row < grid.rows; ++row) {
-    for (int col = 0; col < grid.cols; ++col) {
-      Receiver rx;
-      rx.id = "cell";
-      rx.position = grid.cellCenter(row, col);
-
-      ReceiverResult rr;
-      rr.receiverId = rx.id;
-      rr.position = rx.position;
-      for (const Transmitter& tx : scene.transmitters()) {
-        if (auto los = detail::losPath(*backend, tx, rx, &ctx))
-          rr.paths.push_back(std::move(*los));
-        auto refl = detail::imageMethodReflections(
-            scene, *backend, tx, rx, settings_.maxReflections, &ctx);
-        for (auto& p : refl) rr.paths.push_back(std::move(p));
-      }
-      detail::aggregate(rr, settings_.coherent);
-
-      if (rr.hasSignal) {
-        const int idx = row * grid.cols + col;
-        cov.powerDbm[idx] = rr.receivedPowerDbm;
-        cov.pathLossDb[idx] = rr.pathLossDb;
-        if (settings_.enableSinr)
-          cov.sinrDb[idx] = computeSinr(rr, settings_).sinrDb;
-      }
-    }
+  // Ray-launch coverage (D5) accumulates specular multipath per cell; the
+  // capture radius is derived from the grid so each cell is its own capture
+  // point. The default image-method path is exact and left bit-for-bit
+  // unchanged. A local settings copy carries the derived capture radius without
+  // mutating the simulator's configuration.
+  if (settings_.mode == PropagationMode::RayLaunch) {
+    SimulationSettings mp = settings_;
+    mp.captureRadius = 0.5 * grid.cellSize;
+    const detail::PropagationContext ctx{mp, scene, *backend, cov.frequencyHz};
+    fillCoverageMultipath(scene, *backend, grid, mp, ctx, cov);
+  } else {
+    const detail::PropagationContext ctx{settings_, scene, *backend,
+                                         cov.frequencyHz};
+    fillCoverageImageMethod(scene, *backend, grid, settings_, ctx, cov);
   }
   return cov;
 }
+
+namespace {
+
+/// Receiver velocity (m/s) at route sample `i`, derived from the sampled
+/// positions (D4). Uses a central difference over the neighboring samples
+/// (forward/backward at the endpoints) for the direction. With a configured
+/// `speedMps > 0` the magnitude is fixed to that speed; otherwise the velocity
+/// is the per-step displacement itself (unit sample time), so its magnitude
+/// tracks the sample spacing. A single-sample route or coincident neighbors
+/// yield the zero vector.
+Vec3 sampleVelocity(const std::vector<RouteSamplePoint>& pts, std::size_t i,
+                    double speedMps) {
+  const std::size_t n = pts.size();
+  if (n <= 1) return Vec3::Zero();
+  const std::size_t lo = i > 0 ? i - 1 : i;
+  const std::size_t hi = i + 1 < n ? i + 1 : i;
+  const Vec3 disp = pts[hi].position - pts[lo].position;
+  const double dispNorm = disp.norm();
+  if (dispNorm <= 0.0) return Vec3::Zero();
+  if (speedMps > 0.0) return Vec3(speedMps * (disp / dispNorm));
+  const double steps = static_cast<double>(hi - lo);
+  return Vec3(disp / steps);
+}
+
+/// Fill each path's Doppler shift from the receiver velocity and the path's own
+/// arrival direction, returning the aggregate max |f_d| (Hz) over the paths.
+double fillPathDoppler(std::vector<RFPath>& paths, const Vec3& velocity,
+                       double frequencyHz) {
+  double maxAbs = 0.0;
+  for (RFPath& p : paths) {
+    if (p.points.size() < 2) continue;
+    // Arrival direction: from the receiver (last point) toward the last hop.
+    const Vec3 arrival = p.points[p.points.size() - 2] - p.points.back();
+    p.dopplerHz = rf::perPathDopplerHz(velocity, arrival, frequencyHz);
+    maxAbs = std::max(maxAbs, std::abs(p.dopplerHz));
+  }
+  return maxAbs;
+}
+
+}  // namespace
 
 RouteResult Simulator::runRoute(const Scene& scene, const Route& route) const {
   auto backend = makeBackend(settings_.backend, settings_.allowBackendFallback);
@@ -458,6 +632,13 @@ RouteResult Simulator::runRoute(const Scene& scene, const Route& route) const {
         detail::evaluatePointReceiver(scene, *backend, rx, settings_, ctx);
     if (settings_.enableSinr) applySinr(rr, settings_);
 
+    // Per-path Doppler (D4): derive this sample's receiver velocity from the
+    // sampled route geometry and fill each path's shift. A static / single
+    // sample yields zero velocity, so every dopplerHz stays 0.
+    const Vec3 velocity = sampleVelocity(points, i, route.speedMps);
+    const double sampleDoppler =
+        fillPathDoppler(rr.paths, velocity, out.frequencyHz);
+
     RouteSample s;
     s.index = static_cast<int>(i);
     s.distanceMeters = points[i].distanceMeters;
@@ -466,6 +647,7 @@ RouteResult Simulator::runRoute(const Scene& scene, const Route& route) const {
     s.receivedPowerDbm = rr.receivedPowerDbm;
     s.pathLossDb = rr.pathLossDb;
     s.delaySpreadNs = rr.delaySpreadNs;
+    s.dopplerHz = sampleDoppler;
     s.servingTransmitterId = rr.servingTransmitterId;
     s.sinrDb = rr.sinrDb;
     s.interferencePowerDbm = rr.interferencePowerDbm;
