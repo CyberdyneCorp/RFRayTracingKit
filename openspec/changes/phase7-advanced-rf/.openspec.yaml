@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-02
+goal: Extend the CPU RF engine beyond specular multipath to physically richer
+  propagation and system-level metrics, all validated against analytic
+  references on the CPU backend
