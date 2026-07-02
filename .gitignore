@@ -12,6 +12,8 @@ vcpkg_installed/
 /coverage.*
 /paths.*
 /debug_rays.*
+/advanced_coverage.*
+/drive_test.*
 
 # CMake
 CMakeCache.txt

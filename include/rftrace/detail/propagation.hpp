@@ -7,16 +7,25 @@
 #include <optional>
 #include <vector>
 
+#include <cctype>
+#include <string>
+
 #include "rftrace/backend.hpp"
 #include "rftrace/result.hpp"
+#include "rftrace/rf/atmospheric.hpp"
 #include "rftrace/rf/free_space_path_loss.hpp"
 #include "rftrace/rf/phase.hpp"
+#include "rftrace/rf/vegetation.hpp"
 #include "rftrace/scene.hpp"
 #include "rftrace/simulator.hpp"
 
 namespace rftrace::detail {
 
 inline constexpr double kEps = 1e-4;
+
+/// Upper bound on ray-march iterations when walking a segment through the scene
+/// (vegetation depth / occlusion). Guards against pathological geometry.
+inline constexpr int kMaxMarchSteps = 4096;
 
 inline Vec3 mirrorPoint(const Vec3& p, const Vec3& planePoint,
                         const Vec3& unitNormal) {
@@ -69,20 +78,152 @@ inline double distancePointToSegmentSq(const Vec3& p, const Vec3& a,
   return (p - (a + t * ab)).squaredNorm();
 }
 
+/// Shared, backend-agnostic context threaded into path building/finishing so
+/// Phase 7 loss terms (diffraction / atmospheric / vegetation) can be applied
+/// uniformly to every path. Holds only borrowed references; must not outlive
+/// the objects it points at. Passed as an optional pointer so pre-Phase-7
+/// callers (which pass nullptr) keep identical behavior.
+struct PropagationContext {
+  const SimulationSettings& settings;
+  const Scene& scene;
+  const IBackend& backend;
+  double frequencyHz = 0.0;
+};
+
+/// True when a material is tagged as vegetation (name contains "vegetation",
+/// case-insensitive). R5 tags foliage by material; explicit volumes deferred.
+inline bool isVegetationMaterial(const Material& mat) {
+  std::string lower = mat.name;
+  for (char& ch : lower) ch = static_cast<char>(std::tolower(
+                             static_cast<unsigned char>(ch)));
+  return lower.find("vegetation") != std::string::npos;
+}
+
+/// Length (m) of the segment [a,b] that lies inside vegetation-tagged geometry.
+/// Marches the segment collecting every crossing of a vegetation triangle,
+/// sorts them, and pairs consecutive crossings (enter/exit) into interior
+/// spans. Assumes vegetation meshes are closed volumes; an unpaired trailing
+/// crossing (grazing / endpoint inside foliage) is ignored.
+inline double segmentVegetationDepthMeters(const Scene& scene,
+                                           const IBackend& backend,
+                                           const Vec3& a, const Vec3& b) {
+  const Vec3 delta = b - a;
+  const double len = delta.norm();
+  if (len <= kEps) return 0.0;
+  const Vec3 dir = delta / len;
+
+  std::vector<double> crossings;
+  double cursor = 0.0;
+  for (int step = 0; step < kMaxMarchSteps; ++step) {
+    const Ray ray(a, dir, cursor + kEps, len - kEps);
+    if (ray.tMax <= ray.tMin) break;
+    const Hit h = backend.closestHit(ray);
+    if (!h.valid || h.t >= len - kEps) break;
+    if (h.triangle >= 0 &&
+        isVegetationMaterial(scene.materialForTriangle(h.triangle)))
+      crossings.push_back(h.t);
+    cursor = h.t + kEps;
+  }
+
+  std::sort(crossings.begin(), crossings.end());
+  double depth = 0.0;
+  for (std::size_t i = 0; i + 1 < crossings.size(); i += 2)
+    depth += crossings[i + 1] - crossings[i];
+  return depth;
+}
+
+/// Total in-foliage depth (m) over a whole path polyline.
+inline double vegetationDepthMeters(const PropagationContext& ctx,
+                                    const std::vector<Vec3>& points) {
+  double depth = 0.0;
+  for (std::size_t i = 1; i < points.size(); ++i)
+    depth += segmentVegetationDepthMeters(ctx.scene, ctx.backend, points[i - 1],
+                                          points[i]);
+  return depth;
+}
+
+/// True if any NON-vegetation triangle blocks `ray`. Vegetation is transparent
+/// to this test: it attenuates (via the foliage term) rather than blocking, so
+/// a link may pass through foliage. Used only when vegetation is enabled;
+/// otherwise callers use the backend's plain occluded().
+inline bool blockedByNonVegetation(const Scene& scene, const IBackend& backend,
+                                   const Ray& ray) {
+  double cursor = ray.tMin;
+  for (int step = 0; step < kMaxMarchSteps; ++step) {
+    const Ray probe(ray.origin, ray.direction, cursor, ray.tMax);
+    if (probe.tMax <= probe.tMin) return false;
+    const Hit h = backend.closestHit(probe);
+    if (!h.valid) return false;
+    if (h.triangle < 0 ||
+        !isVegetationMaterial(scene.materialForTriangle(h.triangle)))
+      return true;
+    cursor = h.t + kEps;
+  }
+  return false;
+}
+
+/// Sum of the additive Phase 7 propagation loss terms (dB) for a path with the
+/// given polyline geometry. This is the single hook where atmospheric (rain /
+/// gaseous, ITU-R P.838 / P.676) and vegetation (Weissberger / P.833) losses
+/// are added per path.
+///
+/// Every term is gated by a default-off flag, so with default settings this
+/// returns 0 and the per-path budget is bit-for-bit identical to Phase 1/2.
+inline double extraPropagationLossDb(const PropagationContext& ctx,
+                                     const std::vector<Vec3>& points) {
+  const SimulationSettings& s = ctx.settings;
+  const double freqHz = ctx.frequencyHz;
+  double extra = 0.0;
+
+  if (s.enableRain || s.enableGaseousAttenuation) {
+    const double lengthKm = pathLength(points) / 1000.0;
+    if (s.enableRain)
+      extra += rf::rainSpecificAttenuationDbPerKm(freqHz, s.rainRateMmPerHr) *
+               lengthKm;
+    if (s.enableGaseousAttenuation)
+      extra += rf::gaseousSpecificAttenuationDbPerKm(freqHz) * lengthKm;
+  }
+
+  if (s.enableVegetation) {
+    const double depth = vegetationDepthMeters(ctx, points);
+    if (depth > 0.0) extra += rf::foliageLossDb(freqHz, depth);
+  }
+
+  return extra;
+}
+
 /// Fill the RF metrics of a path whose geometry (`points`) and reflection loss
-/// are already known.
+/// are already known. When `ctx` is non-null, additive Phase 7 loss terms are
+/// folded into the budget (zero in this foundation, so behavior is unchanged).
 inline void finishPath(RFPath& path, const Transmitter& tx, const Receiver& rx,
-                       double reflectionLossDb) {
+                       double reflectionLossDb,
+                       const PropagationContext* ctx = nullptr) {
   const auto& pts = path.points;
   const double len = pathLength(pts);
   const double fspl = rf::freeSpacePathLossDb(len, tx.frequencyHz);
 
   const Vec3 departDir = pts[1] - pts.front();
   const Vec3 arriveDir = pts[pts.size() - 2] - pts.back();
-  const double gtx = tx.antenna.gainTowards(departDir);
-  const double grx = rx.antenna.gainTowards(arriveDir);
+  // Use the steered array gain when an array is configured, else the single
+  // antenna pattern. Array steering defaults to the path's own direction.
+  const double gtx =
+      tx.array && tx.array->size() > 0
+          ? rf::steeredGainDbi(
+                *tx.array,
+                tx.beamSteering.norm() > 0.0 ? tx.beamSteering : departDir,
+                departDir)
+          : tx.antenna.gainTowards(departDir);
+  const double grx =
+      rx.array && rx.array->size() > 0
+          ? rf::steeredGainDbi(
+                *rx.array,
+                rx.beamSteering.norm() > 0.0 ? rx.beamSteering : arriveDir,
+                arriveDir)
+          : rx.antenna.gainTowards(arriveDir);
 
-  path.pathLossDb = fspl + reflectionLossDb;
+  const double extraDb = ctx ? extraPropagationLossDb(*ctx, pts) : 0.0;
+
+  path.pathLossDb = fspl + reflectionLossDb + extraDb;
   path.receivedPowerDbm = tx.powerDbm + gtx + grx - path.pathLossDb;
   path.phaseRad = rf::propagationPhaseRad(len, tx.frequencyHz);
   path.delaySeconds = rf::propagationDelaySeconds(len);
@@ -90,16 +231,19 @@ inline void finishPath(RFPath& path, const Transmitter& tx, const Receiver& rx,
 
 // --- Engines (implemented across translation units) -------------------------
 
-/// LOS path for a (tx, rx) pair if unobstructed.
+/// LOS path for a (tx, rx) pair if unobstructed. `ctx` (optional) carries the
+/// Phase 7 loss hooks; nullptr reproduces pre-Phase-7 behavior.
 std::optional<RFPath> losPath(const IBackend& backend, const Transmitter& tx,
-                              const Receiver& rx);
+                              const Receiver& rx,
+                              const PropagationContext* ctx = nullptr);
 
 /// Specular reflection paths (image method) up to `maxReflections` bounces.
 std::vector<RFPath> imageMethodReflections(const Scene& scene,
                                            const IBackend& backend,
                                            const Transmitter& tx,
                                            const Receiver& rx,
-                                           int maxReflections);
+                                           int maxReflections,
+                                           const PropagationContext* ctx = nullptr);
 
 /// Ray-launched reflected paths per receiver (index-aligned to `receivers`).
 /// LOS is handled separately by the caller.
@@ -107,7 +251,19 @@ std::vector<std::vector<RFPath>> rayLaunch(const Scene& scene,
                                            const IBackend& backend,
                                            const Transmitter& tx,
                                            const std::vector<Receiver>& receivers,
-                                           const SimulationSettings& settings);
+                                           const SimulationSettings& settings,
+                                           const PropagationContext* ctx = nullptr);
+
+/// Single dominant knife-edge diffracted path (ITU-R P.526) for a (tx, rx) pair
+/// whose direct LOS is blocked. Searches the scene's open silhouette (boundary)
+/// edges for the strongest single-edge detour and returns it as a
+/// PathType::Diffraction path (diffraction count 1), or nullopt when none is
+/// found. Only invoked when settings.enableDiffraction is set.
+std::optional<RFPath> diffractionPath(const Scene& scene,
+                                      const IBackend& backend,
+                                      const Transmitter& tx, const Receiver& rx,
+                                      double frequencyHz,
+                                      const PropagationContext* ctx = nullptr);
 
 /// Aggregate a receiver's collected paths into its summary metrics.
 void aggregate(ReceiverResult& rr, bool coherent);

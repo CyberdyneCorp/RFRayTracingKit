@@ -357,6 +357,18 @@ void bindSettings(py::module_& m) {
       .def_readwrite("coherent", &SimulationSettings::coherent)
       .def_readwrite("allow_backend_fallback",
                      &SimulationSettings::allowBackendFallback)
+      // Phase 7 advanced-RF toggles (all default off).
+      .def_readwrite("enable_diffraction", &SimulationSettings::enableDiffraction)
+      .def_readwrite("enable_rain", &SimulationSettings::enableRain)
+      .def_readwrite("rain_rate_mm_per_hr", &SimulationSettings::rainRateMmPerHr)
+      .def_readwrite("enable_gaseous_attenuation",
+                     &SimulationSettings::enableGaseousAttenuation)
+      .def_readwrite("enable_vegetation", &SimulationSettings::enableVegetation)
+      .def_readwrite("enable_sinr", &SimulationSettings::enableSinr)
+      .def_readwrite("noise_bandwidth_hz", &SimulationSettings::noiseBandwidthHz)
+      .def_readwrite("noise_figure_db", &SimulationSettings::noiseFigureDb)
+      .def_readwrite("noise_floor_dbm_override",
+                     &SimulationSettings::noiseFloorDbmOverride)
       .def_readwrite("simulation_id", &SimulationSettings::simulationId);
 }
 
@@ -387,6 +399,11 @@ void bindResults(py::module_& m) {
       .def_readonly("path_loss_db", &ReceiverResult::pathLossDb)
       .def_readonly("delay_spread_ns", &ReceiverResult::delaySpreadNs)
       .def_readonly("phase_rad", &ReceiverResult::phaseRad)
+      .def_readonly("serving_transmitter_id",
+                    &ReceiverResult::servingTransmitterId)
+      .def_readonly("sinr_db", &ReceiverResult::sinrDb)
+      .def_readonly("interference_power_dbm",
+                    &ReceiverResult::interferencePowerDbm)
       .def_readonly("paths", &ReceiverResult::paths);
 
   py::class_<TransmitterInfo>(m, "TransmitterInfo")
@@ -455,6 +472,9 @@ void bindCoverage(py::module_& m) {
       .def_property_readonly(
           "path_loss_db",
           [](const CoverageResult& c) { return toArray1d(c.pathLossDb); })
+      .def_property_readonly(
+          "sinr_db",
+          [](const CoverageResult& c) { return toArray1d(c.sinrDb); })
       .def("power_at", &CoverageResult::powerAt, py::arg("row"), py::arg("col"))
       .def_readonly_static("NoSignal", &CoverageResult::NoSignal);
 }

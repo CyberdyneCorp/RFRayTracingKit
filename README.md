@@ -93,9 +93,34 @@ kernel). RF physics stays backend-agnostic — Metal only accelerates traversal.
 > foundation for a future batched simulator path. Today Metal is a validated, batch-capable
 > traversal backend and the reference for the CUDA/OpenCL backends to come.
 
-Out of scope until later phases: CUDA/OpenCL backends, terrain/GeoTIFF, diffraction,
-atmospheric/vegetation attenuation, MIMO, route simulation, CZML/3D-Tiles.
-See `openspec/project.md` for the full roadmap.
+## Phase 7 capabilities (advanced RF)
+
+Physically richer propagation and system-level metrics, all on the CPU backend and validated
+against published-model reference values. Every feature is **additive and default-off** — with
+default settings, results are identical to Phase 1/2 (enforced by a regression test).
+
+- **Diffraction** — ITU-R P.526 single knife-edge (J(0) ≈ 6 dB); diffracted paths over the
+  dominant blocking edge when `settings.enableDiffraction`.
+- **Atmospheric attenuation** — rain (ITU-R P.838-3, `γ=k·Rᵃ`) and gaseous (P.676) specific
+  attenuation per path length (`enableRain` / `rainRateMmPerHr`, `enableGaseousAttenuation`).
+- **Vegetation attenuation** — Weissberger/P.833 foliage loss over the in-foliage path depth
+  through vegetation-material geometry (`enableVegetation`).
+- **Antenna arrays** — ULA/UPA geometry, array factor, beam steering; a steered array's gain
+  replaces the single-element gain in the per-path budget.
+- **MIMO** — channel matrix H from per-path gains + array responses; narrowband equal-power
+  capacity `log2 det(I + (SNR/M)·H·Hᴴ)` and per-stream SINR; JSON export.
+- **Cell planning / SINR** — serving-cell selection and SINR = S/(I+N) with a physically
+  derived noise floor `N = kTB + NF` (`enableSinr`, `noiseBandwidthHz`, `noiseFigureDb`); SINR
+  coverage maps.
+- **Route simulation** — moving receiver sampled along waypoints → ordered drive-test series
+  with CSV/JSON export (`Simulator::runRoute`).
+
+See `examples/advanced_rf` (diffraction + two-cell SINR coverage + drive-test route). The
+Phase 7 path-loss toggles are drivable from Python via `SimulationSettings` (route/MIMO/array
+Python APIs are a documented follow-up).
+
+Out of scope until later phases: CUDA/OpenCL backends, terrain/GeoTIFF, full UTD diffraction,
+CZML/3D-Tiles route animation. See `openspec/project.md` for the full roadmap.
 
 ## Building
 
