@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <fstream>
 #include <stdexcept>
 
@@ -144,6 +145,37 @@ RFResult loadResultJson(const std::string& path) {
   std::string text((std::istreambuf_iterator<char>(in)),
                    std::istreambuf_iterator<char>());
   return resultFromJsonString(text);
+}
+
+namespace {
+// Non-finite (no-signal) values serialize as JSON null.
+json valueOrNull(double v) { return std::isfinite(v) ? json(v) : json(nullptr); }
+}  // namespace
+
+std::string coverageToJsonString(const CoverageResult& coverage) {
+  json root;
+  root["simulation_id"] = coverage.simulationId;
+  root["frequency_hz"] = coverage.frequencyHz;
+  root["grid"] = {{"origin", vec3ToJson(coverage.grid.origin)},
+                  {"cell_size", coverage.grid.cellSize},
+                  {"cols", coverage.grid.cols},
+                  {"rows", coverage.grid.rows},
+                  {"height", coverage.grid.height}};
+
+  root["power_dbm"] = json::array();
+  for (double v : coverage.powerDbm) root["power_dbm"].push_back(valueOrNull(v));
+  root["path_loss_db"] = json::array();
+  for (double v : coverage.pathLossDb)
+    root["path_loss_db"].push_back(valueOrNull(v));
+
+  return root.dump(2);
+}
+
+void exportCoverageJson(const CoverageResult& coverage,
+                        const std::string& path) {
+  std::ofstream out(path);
+  if (!out) throw std::runtime_error("cannot write coverage JSON to '" + path + "'");
+  out << coverageToJsonString(coverage);
 }
 
 }  // namespace rftrace::io

@@ -6,9 +6,9 @@ transmitters and receivers and computes propagation paths, received power, path 
 delay, phase and multipath, and exports results for external visualization.
 
 The engine is designed for multiple acceleration backends (CPU, Metal, CUDA/OptiX,
-OpenCL) behind a shared, backend-agnostic RF-physics core. This repository currently
-implements **Phase 1: the CPU reference** — the correctness baseline all future GPU
-backends are validated against.
+OpenCL) behind a shared, backend-agnostic RF-physics core. This repository implements
+**Phase 1 (CPU reference)** and **Phase 2 (RF multipath + coverage)** on the CPU backend
+— the correctness baseline all future GPU backends are validated against.
 
 > Development is spec-driven with [OpenSpec](https://openspec.dev). The living specs are
 > in `openspec/`; the current change is `openspec/changes/phase1-cpu-prototype/`.
@@ -28,9 +28,24 @@ backends are validated against.
 - **Results export** — per-receiver aggregation (power, path loss, delay spread) and
   **JSON** / **CSV** export.
 
+## Phase 2 capabilities
+
+- **Stochastic ray launch** — Monte-Carlo ray launching (Fibonacci-sphere sampling) with
+  multi-bounce specular tracing and a receiver capture sphere; deduplicated and seed-
+  reproducible. Selected via `SimulationSettings.mode = PropagationMode::RayLaunch`. The
+  deterministic image method remains the correctness oracle.
+- **Multi-bounce** — first-class `maxReflections > 1` in both propagation modes.
+- **Coverage grid** — `Simulator::runCoverage(scene, grid)` evaluates received power over
+  a georeferenced 2D grid, with a no-signal sentinel.
+- **GeoJSON export** — receivers (points), ray paths (lines), coverage cells (polygons).
+- **glTF export** — debug ray-path lines colored by power + receiver points.
+
+Ray-launch aggregate power agrees with the image method within **≤1 dB** on the golden
+single-wall scene at a pinned budget (600k rays, 3 m capture radius).
+
 Out of scope until later phases: GPU backends, Python bindings, terrain/GeoTIFF,
-coverage grids, diffraction, atmospheric/vegetation attenuation, MIMO, route simulation,
-GeoJSON/CZML/glTF export. See `openspec/project.md` for the full roadmap.
+diffraction, atmospheric/vegetation attenuation, MIMO, route simulation, CZML/3D-Tiles.
+See `openspec/project.md` for the full roadmap.
 
 ## Building
 
@@ -89,8 +104,9 @@ io::exportResultJson(result, "paths.json");
 io::exportReceiversCsv(result, "receivers.csv");
 ```
 
-See `examples/simple_los` (line-of-sight link budget) and `examples/city_reflection`
-(LOS + specular reflection off a wall).
+See `examples/simple_los` (line-of-sight link budget), `examples/city_reflection`
+(LOS + specular reflection off a wall), and `examples/coverage_grid` (coverage-grid mode
+with CSV/JSON/GeoJSON export).
 
 ## Coordinate convention
 
