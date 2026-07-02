@@ -34,6 +34,21 @@ Requires a `python3` with `numpy` + `matplotlib`.
     radiation-pattern balloon, and multipath rays to nearby receivers,
   - `barbados_coverage.geojson` — coverage cells for QGIS.
 
+## 6-sector 360° variant
+
+`barbados_6sector.py` reuses the same OSM scene to model a **6-sector 360° site**
+(sectors 60° apart) on the 30 m pole at **7.125 GHz** (upper 5G mid-band). It runs
+one coverage layer per sector and produces:
+
+- `barbados_6sector_coverage.png` — best-server received power (combined 360° footprint),
+- `barbados_6sector_serving.png` — serving-sector map (which of the 6 sectors dominates each cell),
+- `barbados_6sector_sinr.png` — inter-sector SINR (kTB+NF noise, 100 MHz / NF 7 dB),
+- `barbados_6sector_3d.png` — the six radiation lobes forming the 360° flower on the pole.
+
+```bash
+PYTHONPATH=bindings/python python3 examples/barbados_5g/barbados_6sector.py
+```
+
 ## Notes / honest limitations
 
 - OSM heights are sparse here, so most buildings use a 6 m default — coverage
