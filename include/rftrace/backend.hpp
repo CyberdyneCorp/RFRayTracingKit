@@ -24,6 +24,17 @@ bool backendAvailable(Backend backend);
 /// Ray-traversal contract that isolates hardware acceleration from the scene,
 /// RF physics, and result code. Implementations own only the acceleration
 /// structure and its queries.
+///
+/// Threading: after build(), the query methods are safe to call from a single
+/// thread. They are NOT guaranteed reentrant across threads on GPU backends
+/// (which reuse one command queue and per-call buffers) — a caller wanting
+/// concurrency should use one backend instance per thread.
+///
+/// Performance note: GPU backends pay a host<->device round trip per call, so
+/// per-ray closestHit()/occluded() on Metal is correct but slow; prefer the
+/// batched methods below. The Phase 1 image-method simulator still issues
+/// per-ray queries, so today Metal is primarily a validated, batch-capable
+/// backend rather than a faster drop-in for that path.
 class IBackend {
  public:
   virtual ~IBackend() = default;
@@ -31,6 +42,16 @@ class IBackend {
   virtual Hit closestHit(const Ray& ray) const = 0;
   virtual bool occluded(const Ray& ray) const = 0;
   virtual Backend kind() const = 0;
+
+  /// Batched closest-hit query. The default implementation loops over
+  /// closestHit(); accelerated backends (e.g. Metal) override it with a single
+  /// device dispatch. Results are index-aligned with `rays`.
+  virtual std::vector<Hit> closestHitBatch(const std::vector<Ray>& rays) const;
+
+  /// Batched occlusion query. `char` (not `bool`) so the result is a contiguous
+  /// byte buffer that maps cleanly to GPU storage. Results are index-aligned
+  /// with `rays`.
+  virtual std::vector<char> occludedBatch(const std::vector<Ray>& rays) const;
 };
 
 /// Create a backend. If the requested backend is unavailable and

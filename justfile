@@ -87,6 +87,16 @@ embree:
     cmake --build build-embree
     ./build-embree/tests/rftrace_tests
 
+# Build with the Metal GPU backend and run its suite (Apple + Metal only).
+# Not part of `ci`; tests skip at runtime when no Metal device is present.
+metal:
+    cmake -S . -B build-metal \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=/opt/homebrew \
+      {{vcpkg_arg}} -DRFTRACE_ENABLE_METAL=ON
+    cmake --build build-metal -j
+    ctest --test-dir build-metal --output-on-failure
+
 # --- Python bindings ---------------------------------------------------------
 # Interpreter for the Python extension (must have pybind11 + numpy installed).
 # Override if needed, e.g. `just py=/usr/bin/python3 py-build`.
