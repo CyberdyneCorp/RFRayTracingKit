@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-02
+goal: Extend the CPU engine from deterministic point-receiver paths to scalable
+  Monte-Carlo multipath and area coverage, with web/GIS-ready output
