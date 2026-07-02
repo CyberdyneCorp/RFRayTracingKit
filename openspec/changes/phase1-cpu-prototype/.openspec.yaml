@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-02
+goal: Deliver a correct, portable C++20 CPU baseline that computes RF
+  propagation paths and metrics for point receivers, serving as the correctness
+  reference for later GPU backends

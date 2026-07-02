@@ -1,0 +1,24 @@
+# Build directories
+build/
+build-*/
+_install/
+
+# vcpkg
+vcpkg_installed/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Python (later phases)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
