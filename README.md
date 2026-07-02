@@ -1,0 +1,108 @@
+# RFTraceKit
+
+Modern **C++20** library for general **ray tracing** and **RF propagation simulation**
+(4G/5G/6G and above). It takes a 3D scene (buildings, terrain, materials) plus
+transmitters and receivers and computes propagation paths, received power, path loss,
+delay, phase and multipath, and exports results for external visualization.
+
+The engine is designed for multiple acceleration backends (CPU, Metal, CUDA/OptiX,
+OpenCL) behind a shared, backend-agnostic RF-physics core. This repository currently
+implements **Phase 1: the CPU reference** — the correctness baseline all future GPU
+backends are validated against.
+
+> Development is spec-driven with [OpenSpec](https://openspec.dev). The living specs are
+> in `openspec/`; the current change is `openspec/changes/phase1-cpu-prototype/`.
+
+## Phase 1 capabilities
+
+- Backend-agnostic **scene model** — meshes, materials (with built-in presets),
+  transmitters, receivers, antenna patterns, Z-up coordinate system.
+- **Core geometry** — Eigen-based `Vec3`/`Ray`/`Triangle`/`AABB`, Möller–Trumbore
+  intersection, and a NanoRT-style **BVH** with closest-hit and occlusion queries.
+- **Scene import** — triangle meshes (glTF/OBJ via Assimp, normalized to Z-up) and
+  material definitions (JSON).
+- **RF propagation** — free-space path loss, Fresnel reflection, penetration loss,
+  phase, delay, antenna gain, and coherent/incoherent power aggregation.
+- **Ray simulation** — `Backend` abstraction + CPU backend; point-receiver mode with
+  line-of-sight and specular reflections (image method, up to `maxReflections`).
+- **Results export** — per-receiver aggregation (power, path loss, delay spread) and
+  **JSON** / **CSV** export.
+
+Out of scope until later phases: GPU backends, Python bindings, terrain/GeoTIFF,
+coverage grids, diffraction, atmospheric/vegetation attenuation, MIMO, route simulation,
+GeoJSON/CZML/glTF export. See `openspec/project.md` for the full roadmap.
+
+## Building
+
+Requires CMake ≥ 3.25, a C++20 compiler, and Eigen, Assimp and nlohmann/json.
+GoogleTest is fetched automatically (pinned) unless `-DRFTRACE_USE_SYSTEM_GTEST=ON`.
+
+Dependencies are resolved via **vcpkg** (set `VCPKG_ROOT`) or any system package
+manager through CMake config-mode `find_package` (e.g. Homebrew:
+`brew install eigen assimp nlohmann-json`).
+
+### With `just` (recommended)
+
+```bash
+just build      # configure + compile library, tests, examples
+just test       # build + run the test suite
+just ci         # clang tests + gcc + asan + openspec validate + examples
+just example simple_los
+just --list     # all recipes
+```
+
+### With CMake directly
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Optional backend flags: `-DRFTRACE_ENABLE_METAL/CUDA/OPENCL/EMBREE=ON`,
+`-DRFTRACE_ENABLE_PYTHON=ON` (no-ops until their phases land).
+
+## Public API example
+
+```cpp
+#include "rftrace/rftrace.hpp"
+using namespace rftrace;
+
+Scene scene;
+scene.addMaterial(materials::preset("concrete"));
+scene.loadMesh("city.glb", "concrete");        // glTF/OBJ, normalized to Z-up
+
+Transmitter tx;
+tx.id = "tower_1";
+tx.position = {120.0, 80.0, 35.0};             // Z is height
+tx.frequencyHz = 3.5e9;
+tx.powerDbm = 43.0;
+scene.addTransmitter(tx);
+
+scene.addReceiver(Receiver{.id = "rx_001", .position = {300.0, 180.0, 1.5}});
+
+SimulationSettings settings;
+settings.maxReflections = 3;
+
+RFResult result = Simulator(settings).run(scene);
+io::exportResultJson(result, "paths.json");
+io::exportReceiversCsv(result, "receivers.csv");
+```
+
+See `examples/simple_los` (line-of-sight link budget) and `examples/city_reflection`
+(LOS + specular reflection off a wall).
+
+## Coordinate convention
+
+The core uses a right-handed **Z-up** frame (Z = height/elevation), matching GIS/Cesium
+and the spec's coordinate examples. glTF/OBJ meshes (Y-up) are rotated to Z-up on import.
+
+## Performance
+
+CPU BVH closest-hit throughput is ~0.5 Mrays/s single-threaded (Release) over a
+50k-triangle scene on an Apple-silicon dev machine — within the spec's 100k–1M rays/s
+Phase 1 target. Re-measure per machine; multi-threading and GPU backends come later.
+
+## License
+
+TBD.

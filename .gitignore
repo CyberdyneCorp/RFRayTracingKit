@@ -6,6 +6,10 @@ _install/
 # vcpkg
 vcpkg_installed/
 
+# Example output artifacts
+/simple_los.*
+/city_reflection.*
+
 # CMake
 CMakeCache.txt
 CMakeFiles/

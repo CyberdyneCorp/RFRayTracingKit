@@ -5,9 +5,10 @@
 
 build_dir := "build"
 cxx       := "clang++"
-# vcpkg toolchain — set VCPKG_ROOT in your environment. Empty is tolerated so
-# `just --list` and `just spec` work without a toolchain configured.
-vcpkg_toolchain := env_var_or_default("VCPKG_ROOT", "") / "scripts/buildsystems/vcpkg.cmake"
+# vcpkg toolchain — set VCPKG_ROOT to build against a vcpkg manifest. When unset,
+# the flag is omitted and CMake falls back to system packages (e.g. Homebrew),
+# so `just build` works in both environments.
+vcpkg_arg := if env_var_or_default("VCPKG_ROOT", "") != "" { "-DCMAKE_TOOLCHAIN_FILE=" + env_var_or_default("VCPKG_ROOT", "") / "scripts/buildsystems/vcpkg.cmake" } else { "" }
 
 # Show the available recipes (default).
 default:
@@ -19,7 +20,7 @@ configure *FLAGS:
     cmake -S . -B {{build_dir}} \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CXX_COMPILER={{cxx}} \
-      -DCMAKE_TOOLCHAIN_FILE={{vcpkg_toolchain}} \
+      {{vcpkg_arg}} \
       -DRFTRACE_BUILD_EXAMPLES=ON {{FLAGS}}
 
 # Compile the library, test suite, and examples.
@@ -59,21 +60,21 @@ example NAME: build
 # Configure + build + test with debug symbols and assertions (separate dir).
 debug:
     cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER={{cxx}} \
-      -DCMAKE_TOOLCHAIN_FILE={{vcpkg_toolchain}}
+      {{vcpkg_arg}}
     cmake --build build-debug -j
     ./build-debug/tests/rftrace_tests
 
 # Build + test with GCC (separate build dir).
 gcc:
     cmake -S . -B build-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
-      -DCMAKE_TOOLCHAIN_FILE={{vcpkg_toolchain}}
+      {{vcpkg_arg}}
     cmake --build build-gcc
     ./build-gcc/tests/rftrace_tests
 
 # Build + test under AddressSanitizer / UBSan (separate build dir).
 asan:
     cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER={{cxx}} \
-      -DCMAKE_TOOLCHAIN_FILE={{vcpkg_toolchain}} \
+      {{vcpkg_arg}} \
       -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
       -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
     cmake --build build-asan
@@ -82,7 +83,7 @@ asan:
 # Build with the optional Embree CPU backend and run the suite (validation baseline).
 embree:
     cmake -S . -B build-embree -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER={{cxx}} \
-      -DCMAKE_TOOLCHAIN_FILE={{vcpkg_toolchain}} -DRFTRACE_ENABLE_EMBREE=ON
+      {{vcpkg_arg}} -DRFTRACE_ENABLE_EMBREE=ON
     cmake --build build-embree
     ./build-embree/tests/rftrace_tests
 

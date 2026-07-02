@@ -1,0 +1,5 @@
+add_executable(rftrace_simple_los simple_los/main.cpp)
+target_link_libraries(rftrace_simple_los PRIVATE rftrace::rftrace)
+
+add_executable(rftrace_city_reflection city_reflection/main.cpp)
+target_link_libraries(rftrace_city_reflection PRIVATE rftrace::rftrace)

@@ -1,0 +1,23 @@
+#pragma once
+
+/// RFTraceKit umbrella header — pulls in the public Phase 1 API.
+#include "rftrace/antenna.hpp"
+#include "rftrace/backend.hpp"
+#include "rftrace/bvh.hpp"
+#include "rftrace/exporters/csv_exporter.hpp"
+#include "rftrace/exporters/json_exporter.hpp"
+#include "rftrace/geometry.hpp"
+#include "rftrace/importers/material_importer.hpp"
+#include "rftrace/importers/mesh_importer.hpp"
+#include "rftrace/material.hpp"
+#include "rftrace/math.hpp"
+#include "rftrace/result.hpp"
+#include "rftrace/rf/antenna_pattern.hpp"
+#include "rftrace/rf/channel.hpp"
+#include "rftrace/rf/free_space_path_loss.hpp"
+#include "rftrace/rf/fresnel.hpp"
+#include "rftrace/rf/penetration.hpp"
+#include "rftrace/rf/phase.hpp"
+#include "rftrace/rf/reflection.hpp"
+#include "rftrace/scene.hpp"
+#include "rftrace/simulator.hpp"
