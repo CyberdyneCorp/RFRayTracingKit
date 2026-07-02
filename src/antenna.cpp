@@ -42,7 +42,18 @@ double AntennaPattern::gainTowards(const Vec3& worldDir) const {
     const double cosA = std::clamp(boreProj.dot(dpn), -1.0, 1.0);
     azimuthDeg = std::acos(cosA) * 180.0 / constants::pi;
   }
-  return peakGainDbi + interpolateCut(azimuthCutDb, azimuthDeg);
+
+  // Elevation measured out of that horizontal plane: the magnitude of the
+  // direction's elevation relative to the boresight's elevation (0–90°). An
+  // empty vertical cut yields 0 dB, preserving azimuth-only behaviour.
+  const double boreEl = std::asin(std::clamp(boresight.normalized().dot(upn),
+                                             -1.0, 1.0));
+  const double dirEl = std::asin(std::clamp(dir.dot(upn), -1.0, 1.0));
+  const double elevationDeg =
+      std::abs(dirEl - boreEl) * 180.0 / constants::pi;
+
+  return peakGainDbi + interpolateCut(azimuthCutDb, azimuthDeg) +
+         interpolateCut(verticalCutDb, elevationDeg);
 }
 
 }  // namespace rftrace

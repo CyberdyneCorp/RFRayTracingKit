@@ -13,18 +13,27 @@ enum class Polarization { Vertical, Horizontal, RHCP, LHCP, None };
 /// Antenna radiation pattern returning gain (dBi) for a world-space direction.
 ///
 /// The default is omnidirectional. A directional pattern is defined by a peak
-/// gain, a boresight direction, an "up" reference, and an azimuth cut table of
-/// (angle°, relative dB) samples that are linearly interpolated. This is enough
-/// for Phase 1; richer 2D patterns arrive with the advanced-RF phase.
+/// gain, a boresight direction, an "up" reference, and two cut tables of
+/// (angle°, relative dB) samples that are linearly interpolated:
+///   * `azimuthCutDb`  — horizontal cut, indexed by the azimuth angle (0–180°)
+///     between the direction and the boresight, measured in the plane
+///     perpendicular to `up`.
+///   * `verticalCutDb` — vertical cut, indexed by the elevation angle (0–90°)
+///     between the direction and the boresight, out of that horizontal plane.
+///
+/// `gainTowards` returns `peakGainDbi + H(azimuth) + V(elevation)`, i.e. the
+/// peak gain plus the two cut attenuations (both ~0 dB at boresight). An empty
+/// table contributes 0 dB, so an omni or azimuth-only pattern is unchanged.
 struct AntennaPattern {
   bool omni = true;
   double peakGainDbi = 0.0;
   Vec3 boresight{1.0, 0.0, 0.0};  ///< main-beam direction (world space)
   Vec3 up{0.0, 0.0, 1.0};         ///< reference up for azimuth measurement
-  std::vector<std::pair<double, double>> azimuthCutDb;  ///< sorted by angle°
+  std::vector<std::pair<double, double>> azimuthCutDb;   ///< sorted by angle°
+  std::vector<std::pair<double, double>> verticalCutDb;  ///< sorted by angle°
 
   static AntennaPattern Omnidirectional(double gainDbi = 0.0) {
-    return AntennaPattern{true, gainDbi, {1, 0, 0}, {0, 0, 1}, {}};
+    return AntennaPattern{true, gainDbi, {1, 0, 0}, {0, 0, 1}, {}, {}};
   }
 
   /// Gain (dBi) toward a world-space direction (need not be normalized).

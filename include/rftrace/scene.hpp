@@ -8,6 +8,7 @@
 
 #include "rftrace/antenna.hpp"
 #include "rftrace/geometry.hpp"
+#include "rftrace/importers/geotiff_terrain.hpp"
 #include "rftrace/material.hpp"
 #include "rftrace/rf/array.hpp"
 
@@ -22,11 +23,15 @@ struct SceneError : std::runtime_error {
 enum class UpAxis { Z };
 
 /// Records how scene coordinates are interpreted. Phase 1 is a local Cartesian
-/// frame in metres with Z as height.
+/// frame in metres with Z as height. When `georeferenced` is true the frame is a
+/// local East-North-Up tangent plane anchored at (`originLat`, `originLon`); see
+/// Scene::setGeoOrigin / Scene::geoProject.
 struct CoordinateSystem {
   UpAxis up = UpAxis::Z;
   std::string units = "meters";
   bool georeferenced = false;
+  double originLat = 0.0;  ///< Geographic origin latitude in degrees (WGS84).
+  double originLon = 0.0;  ///< Geographic origin longitude in degrees (WGS84).
 };
 
 struct Transmitter {
@@ -92,12 +97,69 @@ class Scene {
   CoordinateSystem& coordinateSystem() { return coordinateSystem_; }
   const CoordinateSystem& coordinateSystem() const { return coordinateSystem_; }
 
+  // --- Georeferencing -------------------------------------------------------
+  /// Anchor the scene's local ENU frame at a geographic origin (degrees, WGS84).
+  /// Marks the coordinate system as georeferenced. All geospatial importers
+  /// project onto this frame; if none is set when one runs, it defaults to the
+  /// dataset centroid.
+  void setGeoOrigin(double latDeg, double lonDeg);
+  /// True once a geographic origin has been set.
+  bool hasGeoOrigin() const { return coordinateSystem_.georeferenced; }
+  /// Project a geographic point (degrees, altitude in metres) into local ENU
+  /// metres using an equirectangular approximation about the origin:
+  ///   x = (lon - lon0) * 111320 * cos(lat0),  y = (lat - lat0) * 110540,  z = alt.
+  /// Right-handed, Z-up. Throws SceneError if no origin has been set.
+  Vec3 geoProject(double latDeg, double lonDeg, double altMeters = 0.0) const;
+
   // --- Import helpers (implemented in the importers) ------------------------
   /// Load a triangle mesh (glTF/OBJ) via Assimp, normalizing to Z-up. When
   /// `material` is non-empty it must name an existing material.
   std::size_t loadMesh(const std::string& path, const std::string& material = "");
   /// Load material definitions from a JSON file into the material table.
   std::size_t loadMaterials(const std::string& path);
+  /// Import a GeoJSON FeatureCollection: Polygon/MultiPolygon features become
+  /// extruded buildings assigned `buildingMaterial`, Point features become
+  /// receivers or transmitters per `pointType` ("receiver"/"transmitter"/"").
+  /// Coordinates are projected through the georeference (centroid default when
+  /// unset). Returns the number of building triangles added.
+  std::size_t loadGeoJSON(const std::string& path,
+                          const std::string& buildingMaterial = "concrete",
+                          const std::string& pointType = "receiver");
+  /// Import a CityJSON document: Building/BuildingPart objects become meshes
+  /// (triangulated boundaries, or footprint+height extrusion). Vertices are
+  /// dequantized via the document transform then projected through the
+  /// georeference. Returns the number of triangles added.
+  std::size_t loadCityJSON(const std::string& path,
+                           const std::string& buildingMaterial = "concrete");
+  /// Import an Overpass (OSM) JSON document: `building` ways become extruded
+  /// buildings and `natural=wood`/`landuse=forest`/`leisure=park` areas become
+  /// vegetation. Node coordinates are resolved and projected through the
+  /// georeference. Returns the number of triangles added.
+  std::size_t loadOSM(const std::string& path,
+                      const std::string& buildingMaterial = "concrete",
+                      const std::string& vegetationMaterial = "vegetation");
+  /// Load a single-band GeoTIFF DEM (GDAL) as a triangulated terrain surface
+  /// assigned `opts.terrainMaterial` ("soil"). Sets the scene georeference to the
+  /// DEM centroid when unset, stores the imported terrain (see `terrain()`), and
+  /// — when `opts.offsetBuildingBases` is set — lifts subsequently-imported
+  /// buildings onto the terrain. Returns the number of terrain triangles added.
+  /// Throws SceneError on failure, or a runtime error when built without GDAL.
+  std::size_t loadTerrain(const std::string& path,
+                          const io::TerrainImportOptions& opts = {});
+
+  // --- Terrain --------------------------------------------------------------
+  /// True once a terrain DEM has been loaded via `loadTerrain`.
+  bool hasTerrain() const { return terrain_.has_value(); }
+  /// The imported terrain model, or nullptr when none has been loaded.
+  const io::TerrainModel* terrain() const {
+    return terrain_ ? &*terrain_ : nullptr;
+  }
+  /// Terrain elevation (absolute metres) at local ENU (x, y); 0 when no terrain
+  /// is loaded or the point falls outside the DEM.
+  double groundElevationAt(double x, double y) const;
+  /// Whether imported buildings should be lifted onto the terrain (set by
+  /// `loadTerrain` via `TerrainImportOptions::offsetBuildingBases`).
+  bool offsetBuildingBases() const { return offsetBuildingBases_; }
 
  private:
   std::vector<Material> materials_;
@@ -110,6 +172,8 @@ class Scene {
   std::unordered_map<std::string, std::size_t> rxById_;
   CoordinateSystem coordinateSystem_;
   int defaultMaterialIndex_ = 0;
+  std::optional<io::TerrainModel> terrain_;
+  bool offsetBuildingBases_ = false;
 };
 
 }  // namespace rftrace

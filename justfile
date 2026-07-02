@@ -108,6 +108,15 @@ opencl:
     cmake --build build-opencl -j
     ctest --test-dir build-opencl --output-on-failure
 
+# Build with GDAL (GeoTIFF/DEM) + Arrow (Parquet) IO and run their tests.
+geo:
+    cmake -S . -B build-geo \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=/opt/homebrew \
+      {{vcpkg_arg}} -DRFTRACE_ENABLE_GDAL=ON -DRFTRACE_ENABLE_PARQUET=ON
+    cmake --build build-geo -j
+    ctest --test-dir build-geo --output-on-failure
+
 # Build with the CUDA/OptiX GPU backend and run its suite (needs NVIDIA + OptiX).
 # Not part of `ci`; expected to fail to configure on non-NVIDIA hosts. Set
 # OptiX_INSTALL_DIR to your OptiX SDK path.

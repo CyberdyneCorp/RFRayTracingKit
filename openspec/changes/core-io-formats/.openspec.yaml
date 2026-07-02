@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-02
+goal: Move geospatial import and export from example Python scripts into the
+  backend-agnostic C++ core, adding a georeference plus GeoJSON/CityJSON/OSM/MSI
+  import, CZML/3D-Tiles export, and flag-gated GeoTIFF (GDAL) and Parquet (Arrow) IO.

@@ -22,7 +22,9 @@ add_executable(rftrace_tests
   test_geometry.cpp
   test_bvh.cpp
   test_scene.cpp
+  test_georef.cpp
   test_import.cpp
+  test_msi_antenna.cpp
   test_rf.cpp
   test_simulation.cpp
   test_results.cpp
@@ -31,7 +33,12 @@ add_executable(rftrace_tests
   test_raylaunch.cpp
   test_coverage.cpp
   test_geojson.cpp
+  test_geo_import.cpp
+  test_geotiff.cpp
   test_gltf.cpp
+  test_czml.cpp
+  test_tiles3d.cpp
+  test_parquet.cpp
   test_phase2_golden.cpp
   test_phase7_regression.cpp
   test_diffraction.cpp
@@ -54,7 +61,25 @@ target_link_libraries(rftrace_tests
   PRIVATE rftrace::rftrace GTest::gtest GTest::gtest_main
           nlohmann_json::nlohmann_json assimp::assimp)
 
+# test_geotiff.cpp uses GDAL directly (to author a synthetic DEM and re-read the
+# exported heatmap). RFTRACE_HAVE_GDAL propagates from rftrace's PUBLIC compile
+# definition; the test target still needs GDAL's own headers/link when enabled.
+if(RFTRACE_ENABLE_GDAL)
+  find_package(GDAL CONFIG REQUIRED)
+  target_link_libraries(rftrace_tests PRIVATE GDAL::GDAL)
+endif()
+
+# test_parquet.cpp uses Arrow/Parquet directly (to re-read the exported table).
+# RFTRACE_HAVE_PARQUET propagates from rftrace's PUBLIC compile definition; the
+# test target still needs Arrow/Parquet's own headers/link when enabled.
+if(RFTRACE_ENABLE_PARQUET)
+  find_package(Arrow CONFIG REQUIRED)
+  find_package(Parquet CONFIG REQUIRED)
+  target_link_libraries(rftrace_tests PRIVATE
+    Arrow::arrow_shared Parquet::parquet_shared)
+endif()
+
 include(GoogleTest)
 # Enumerate tests at ctest time (not build time) so the build never runs the
 # freshly linked binary — more robust across toolchains/generators.
-gtest_discover_tests(rftrace_tests DISCOVERY_MODE PRE_TEST)
+gtest_discover_tests(rftrace_tests DISCOVERY_MODE PRE_TEST DISCOVERY_TIMEOUT 120)
