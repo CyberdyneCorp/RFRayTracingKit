@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """6-sector 360 deg 5G site at 7.125 GHz on a 30 m pole, Station Hill Bridgetown.
 
-Six directional sectors spaced 60 deg apart share one 30 m mast at
-(13.11220679386025, -59.603538511368605). Reuses the real OSM building/vegetation
-scene from barbados_5g.py. Produces, over a 3 km radius:
-  * best-server received-power coverage (the combined 360 deg footprint),
-  * a serving-sector map (which of the 6 sectors dominates each cell),
-  * an inter-sector SINR map (kTB+NF noise), and
-  * a 3D close-up of all six radiation-pattern lobes forming the 360 deg flower.
+Six directional sectors 60 deg apart share one 30 m mast. Reuses the terrain-aware
+OSM scene from barbados_5g.py (buildings on the DEM + a terrain surface). Produces,
+over a 3 km radius: best-server coverage, a serving-sector map, an inter-sector
+SINR map, and a 3D close-up of all six lobes + multipath over the terrain.
 
 Prereq:  python3 examples/barbados_5g/fetch_osm.py
 Run:     PYTHONPATH=bindings/python python3 examples/barbados_5g/barbados_6sector.py
@@ -23,21 +20,21 @@ warnings.filterwarnings("ignore")
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import barbados_5g as base  # reuse enu/parse/load_osm/extrude/antenna_balloon
+import barbados_5g as base
 
 import rftracekit as rf
 from rftracekit import _native
 
-FREQ = 7.125e9             # upper 5G mid-band
+FREQ = 7.125e9
 MAST_H = 30.0
 EIRP_DBM = 46.0
-DOWNTILT_DEG = 8.0         # steeper tilt: higher band, smaller cell
+DOWNTILT_DEG = 8.0
 N_SECTORS = 6
-AZIMUTHS = [i * 360.0 / N_SECTORS for i in range(N_SECTORS)]  # 0,60,...,300
+AZIMUTHS = [i * 360.0 / N_SECTORS for i in range(N_SECTORS)]
 SITE_R = 3000.0
 GRID_CELL = 30.0
 RENDER_R = 380.0
-NOISE_BW_HZ = 100e6        # 5G 100 MHz channel
+NOISE_BW_HZ = 100e6
 NOISE_FIG_DB = 7.0
 HERE = os.path.dirname(os.path.abspath(__file__))
 SECTOR_COLORS = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#00ced1"]
@@ -51,19 +48,18 @@ def beam_dir(az_deg, dt_deg=DOWNTILT_DEG):
 def sector_array(az_deg):
     lam = 3e8 / FREQ
     az = math.radians(az_deg)
-    ax_x = [-math.sin(az), math.cos(az), 0.0]
-    ax_y = [0.0, 0.0, 1.0]
     arr = _native.uniform_planar_array(8, 8, 0.5 * lam, 0.5 * lam, FREQ,
-                                       ax_x, ax_y, 3.0)
+                                       [-math.sin(az), math.cos(az), 0.0],
+                                       [0.0, 0.0, 1.0], 3.0)
     arr.boresight = beam_dir(az_deg)
     arr.back_lobe_floor_db = -30.0
     return arr
 
 
-def sector_tx(i, az_deg):
+def sector_tx(i, az_deg, ground_z):
     tx = _native.Transmitter()
     tx.id = f"sector_{i}"
-    tx.position = [0.0, 0.0, MAST_H]
+    tx.position = [0.0, 0.0, ground_z + MAST_H]
     tx.frequency_hz = FREQ
     tx.power_dbm = EIRP_DBM
     tx.array = sector_array(az_deg)
@@ -71,10 +67,12 @@ def sector_tx(i, az_deg):
     return tx
 
 
-def scene_with(btris, vtris, transmitters):
+def scene_with(btris, vtris, terrain, transmitters):
     scene = rf.Scene()
     scene.add_material(rf.materials.preset("concrete"))
     scene.add_material(rf.materials.preset("vegetation"))
+    scene.add_material(rf.materials.preset("soil"))
+    scene.add_mesh(terrain, "soil")
     scene.add_mesh(btris, "concrete")
     if vtris:
         scene.add_mesh(vtris, "vegetation")
@@ -85,14 +83,12 @@ def scene_with(btris, vtris, transmitters):
 
 def main():
     t0 = time.time()
+    d = base.get_dem()
     buildings, vegetation = base.load_osm()
-    btris, vtris = [], []
-    for ring, h in buildings:
-        base.extrude(ring, h, btris)
-    for ring, h in vegetation:
-        base.extrude(ring, h, vtris)
-    print(f"[6sector] {len(buildings)} buildings ({len(btris)} tris) loaded in "
-          f"{time.time()-t0:.1f}s; {N_SECTORS} sectors @ {FREQ/1e9:.3f} GHz")
+    btris, vtris, terrain, site = base.build_geometry(buildings, vegetation, d)
+    print(f"[6sector] DEM ground {site:.1f} m; {len(buildings)} buildings "
+          f"({len(btris)} tris) + terrain ({len(terrain)} tris) in {time.time()-t0:.1f}s; "
+          f"{N_SECTORS} sectors @ {FREQ/1e9:.3f} GHz")
 
     cols = rows = int(2 * SITE_R / GRID_CELL)
     grid = _native.CoverageGrid()
@@ -100,40 +96,36 @@ def main():
     grid.cell_size = GRID_CELL
     grid.cols = cols
     grid.rows = rows
-    grid.height = 1.5
+    grid.cell_heights = base.coverage_cell_heights(d, grid, cols, rows)
 
     settings = rf.SimulationSettings(max_reflections=0)
     settings.enable_vegetation = True
 
-    # One coverage layer per sector (single-tx scene each), reusing the geometry.
     t1 = time.time()
     layers = []
     for i, az in enumerate(AZIMUTHS):
-        scene = scene_with(btris, vtris, [sector_tx(i, az)])
+        scene = scene_with(btris, vtris, terrain, [sector_tx(i, az, site)])
         cov = rf.Simulator(settings).run_coverage(scene, grid)
         p = np.array(cov.power_dbm, dtype=float).reshape(rows, cols)
         p[~np.isfinite(p)] = np.nan
         layers.append(p)
-    L = np.stack(layers)                       # (6, rows, cols) dBm
+    L = np.stack(layers)
     print(f"[6sector] {N_SECTORS} coverage layers in {time.time()-t1:.1f}s")
 
-    any_signal = np.isfinite(L).any(axis=0)
+    any_sig = np.isfinite(L).any(axis=0)
     Lfill = np.where(np.isfinite(L), L, -np.inf)
-    serving = np.where(any_signal, np.argmax(Lfill, axis=0), -1)
-    best = np.where(any_signal, np.max(Lfill, axis=0), np.nan)
-
+    serving = np.where(any_sig, np.argmax(Lfill, axis=0), -1)
+    best = np.where(any_sig, np.max(Lfill, axis=0), np.nan)
     lin = np.where(np.isfinite(L), 10.0 ** (L / 10.0), 0.0)
     total = lin.sum(axis=0)
     srv = lin.max(axis=0)
     noise = 10.0 ** ((-174.0 + 10 * math.log10(NOISE_BW_HZ) + NOISE_FIG_DB) / 10.0)
-    sinr = np.where(any_signal,
-                    10.0 * np.log10(srv / (total - srv + noise)), np.nan)
-
-    print(f"[6sector] {int(any_signal.sum())} covered cells; peak {np.nanmax(best):.1f} dBm; "
+    sinr = np.where(any_sig, 10.0 * np.log10(srv / (total - srv + noise)), np.nan)
+    print(f"[6sector] {int(any_sig.sum())} covered cells; peak {np.nanmax(best):.1f} dBm; "
           f"median SINR {np.nanmedian(sinr):.1f} dB")
 
     render_maps(best, serving, sinr, buildings)
-    render_3d(buildings)
+    render_3d(buildings, d, site)
     print("[6sector] wrote barbados_6sector_coverage.png, _serving.png, _sinr.png, _3d.png")
     return 0
 
@@ -156,16 +148,14 @@ def render_maps(best, serving, sinr, buildings):
         ax.set_xlim(-SITE_R, SITE_R); ax.set_ylim(-SITE_R, SITE_R)
         ax.set_aspect("equal"); ax.set_xlabel("East (m)"); ax.set_ylabel("North (m)")
 
-    # Best-server received power.
     fig, ax = plt.subplots(figsize=(11, 10))
     im = ax.imshow(best, origin="lower", extent=ext, cmap="turbo", vmin=-110, vmax=-40)
     fig.colorbar(im, ax=ax, shrink=0.8, label="Best received power (dBm)")
     footprints(ax)
-    ax.set_title("6-sector 5G @ 7.125 GHz — best-server coverage (3 km)")
+    ax.set_title("6-sector 5G @ 7.125 GHz — best-server coverage (3 km, OSM + terrain)")
     fig.savefig(os.path.join(HERE, "barbados_6sector_coverage.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
-    # Serving-sector map.
     fig, ax = plt.subplots(figsize=(11, 10))
     cmap = ListedColormap(SECTOR_COLORS)
     sm = np.where(serving >= 0, serving, np.nan)
@@ -175,11 +165,10 @@ def render_maps(best, serving, sinr, buildings):
     cb.ax.set_yticklabels([f"S{i} ({int(AZIMUTHS[i])}°)" for i in range(N_SECTORS)])
     cb.set_label("Serving sector")
     footprints(ax)
-    ax.set_title("6-sector 5G @ 7.125 GHz — serving-sector (best-server) map")
+    ax.set_title("6-sector 5G @ 7.125 GHz — serving-sector map (over terrain)")
     fig.savefig(os.path.join(HERE, "barbados_6sector_serving.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
-    # Inter-sector SINR.
     fig, ax = plt.subplots(figsize=(11, 10))
     im = ax.imshow(sinr, origin="lower", extent=ext, cmap="RdYlGn", vmin=-5, vmax=25)
     fig.colorbar(im, ax=ax, shrink=0.8, label="SINR (dB)")
@@ -189,45 +178,48 @@ def render_maps(best, serving, sinr, buildings):
     plt.close(fig)
 
 
-def render_3d(buildings):
+def render_3d(buildings, d, site):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 
-    # A ring of receivers around the full 360 deg (every 30 deg, two distances)
-    # so every sector illuminates some, plus multipath via ray launch.
     rxs = []
     for adeg in range(0, 360, 30):
         a = math.radians(adeg)
-        for d in (170.0, 300.0):
-            rxs.append((d * math.cos(a), d * math.sin(a)))
+        for dist in (170.0, 300.0):
+            rxs.append((dist * math.cos(a), dist * math.sin(a)))
 
     near = [(r, h) for r, h in buildings
             if min(math.hypot(x, y) for x, y in r) < RENDER_R]
-    nb = []
-    for ring, h in near:
-        base.extrude(ring, h, nb)
-    scene = scene_with(nb, [], [sector_tx(i, az) for i, az in enumerate(AZIMUTHS)])
-    for j, (x, y) in enumerate(rxs):
-        scene.add_receiver(id=f"rx{j}", position=[x, y, 1.5])
+    terr = base.demmod.terrain_triangles(d, RENDER_R, 30.0, _native.Triangle)
+    nb, bz = [], (d.elev_enu(base._centroids(near)[:, 0], base._centroids(near)[:, 1])
+                  if near else [])
+    for (ring, h), z0 in zip(near, bz):
+        base.extrude(ring, float(z0), float(z0) + h, nb)
+    scene = scene_with(nb, [], terr, [sector_tx(i, az, site) for i, az in enumerate(AZIMUTHS)])
+    rzs = d.elev_enu(np.array([x for x, _ in rxs]), np.array([y for _, y in rxs]))
+    for j, ((x, y), rz) in enumerate(zip(rxs, rzs)):
+        scene.add_receiver(id=f"rx{j}", position=[x, y, float(rz) + 1.5])
     s = rf.SimulationSettings(mode="raylaunch", max_reflections=2,
                               rays_per_transmitter=200_000, capture_radius=5.0, seed=1)
     res = rf.Simulator(s).run(scene)
 
     fig = plt.figure(figsize=(13, 10))
     ax = fig.add_subplot(111, projection="3d")
+    tp = [[np.asarray(t.v0), np.asarray(t.v1), np.asarray(t.v2)] for t in terr]
+    ax.add_collection3d(Poly3DCollection(tp, facecolor="#cdbf9a", edgecolor="none", alpha=0.5))
     polys = []
-    for ring, h in near:
+    for (ring, h), z0 in zip(near, bz):
         r = ring[:-1] if ring[0] == ring[-1] else ring
+        z1 = float(z0) + h
         for i in range(len(r)):
             (x0, y0), (x1, y1) = r[i], r[(i + 1) % len(r)]
-            polys.append([(x0, y0, 0), (x1, y1, 0), (x1, y1, h), (x0, y0, h)])
-        polys.append([(x, y, h) for x, y in r])
+            polys.append([(x0, y0, z0), (x1, y1, z0), (x1, y1, z1), (x0, y0, z1)])
+        polys.append([(x, y, z1) for x, y in r])
     ax.add_collection3d(Poly3DCollection(polys, facecolor="#c2c6cc",
-                        edgecolor="#8a909a", linewidths=0.1, alpha=0.28))
+                        edgecolor="#8a909a", linewidths=0.1, alpha=0.35))
 
-    # Multipath rays colored by received power.
     segs, powers = [], []
     for r in res.native.receivers:
         for p in r.paths:
@@ -239,20 +231,22 @@ def render_3d(buildings):
         cols = [plt.cm.RdYlGn(norm(pw)) for pw in powers]
         ax.add_collection3d(Line3DCollection(segs, colors=cols, linewidths=0.4, alpha=0.5))
 
-    tx = [0.0, 0.0, MAST_H]
+    tx = [0.0, 0.0, site + MAST_H]
     for i, az in enumerate(AZIMUTHS):
         X, Y, Z, G = base.antenna_balloon(sector_array(az), beam_dir(az), tx,
                                           scale=95.0, nlat=48, nlon=96)
         ax.plot_surface(X, Y, Z, color=SECTOR_COLORS[i], rstride=2, cstride=2,
                         linewidth=0, antialiased=True, shade=True, alpha=0.8)
-    ax.plot([0, 0], [0, 0], [0, MAST_H], color="0.2", lw=2)  # pole
+    ax.plot([0, 0], [0, 0], [site, site + MAST_H], color="0.2", lw=2)
     ax.scatter(*tx, c="black", marker="*", s=180, depthshade=False,
                label="6-sector site (7.125 GHz, 30 m)")
-    ax.scatter([x for x, _ in rxs], [y for _, y in rxs], [1.5] * len(rxs),
-               c="#111", s=22, depthshade=False, label="Receivers")
-    ax.set_xlim(-RENDER_R, RENDER_R); ax.set_ylim(-RENDER_R, RENDER_R); ax.set_zlim(0, 150)
+    ax.scatter([x for x, _ in rxs], [y for _, y in rxs],
+               [float(z) + 1.5 for z in rzs], c="#111", s=22, depthshade=False,
+               label="Receivers")
+    ax.set_xlim(-RENDER_R, RENDER_R); ax.set_ylim(-RENDER_R, RENDER_R)
+    ax.set_zlim(min(site - 5, 0), site + 150)
     ax.set_xlabel("East (m)"); ax.set_ylabel("North (m)"); ax.set_zlabel("z (m)")
-    ax.set_title("6-sector 360° site — lobes + multipath rays on a 30 m pole (Station Hill)")
+    ax.set_title("6-sector 360° site — lobes + multipath over terrain (Station Hill)")
     ax.view_init(elev=32, azim=-60)
     ax.legend(loc="upper left")
     fig.savefig(os.path.join(HERE, "barbados_6sector_3d.png"), dpi=130, bbox_inches="tight")

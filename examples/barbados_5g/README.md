@@ -2,8 +2,10 @@
 
 Simulates a 3.5 GHz 5G macro **sector** on a 30 m mast at Station Hill, Bridgetown,
 Barbados (13.11221, −59.60354), over a **3 km radius**, using **real OpenStreetMap
-building + vegetation footprints** extruded into a 3D scene. Buildings (concrete)
-block/shadow line-of-sight; vegetation attenuates.
+building + vegetation footprints** AND an **open DEM** (AWS terrarium tiles, `dem.py`)
+so buildings sit on their real ground elevation and the **terrain surface itself
+blocks/shadows**. Buildings (concrete) block LOS, terrain relief shadows, vegetation
+attenuates, and coverage is evaluated at terrain height (via `CoverageGrid.cell_heights`).
 
 ## Run
 
@@ -51,10 +53,11 @@ PYTHONPATH=bindings/python python3 examples/barbados_5g/barbados_6sector.py
 
 ## Notes / honest limitations
 
-- OSM heights are sparse here, so most buildings use a 6 m default — coverage
+- OSM heights are sparse here, so most buildings use a 6 m default — building
   shadowing is approximate. Swap in a real DSM/LiDAR height source for accuracy.
+- Terrain comes from the ~30 m SRTM-derived terrarium DEM (interpolated); good for
+  hill shadowing, not for fine features. Tiles are cached under `dem_cache/`.
 - Coverage uses LOS + FSPL (no reflections) for speed over 40k buildings; the 3D
-  close-up uses ray-launch with 2 bounces to show multipath. Terrain is flat
-  (no DEM); add GeoTIFF terrain (a later phase) for hills.
+  close-up uses ray-launch with 2 bounces to show multipath.
 - The array uses isotropic elements × a cos² element pattern; it approximates a
   panel sector rather than a calibrated antenna file (MSI).

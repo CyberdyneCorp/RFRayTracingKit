@@ -16,13 +16,19 @@ struct CoverageGrid {
   int cols = 1;
   int rows = 1;
   double height = 1.5;
+  /// Optional per-cell evaluation height (row-major, size rows*cols). When set,
+  /// it overrides the flat `height` — e.g. to follow terrain (ground + rx height).
+  std::vector<double> cellHeights;
 
   int cellCount() const { return cols * rows; }
 
-  /// World-space centre of cell (row, col) at the grid height.
+  /// World-space centre of cell (row, col). Uses the per-cell height when
+  /// `cellHeights` is populated, otherwise the flat grid `height`.
   Vec3 cellCenter(int row, int col) const {
+    const double z = cellHeights.empty() ? height
+                                         : cellHeights[row * cols + col];
     return Vec3{origin.x() + (col + 0.5) * cellSize,
-                origin.y() + (row + 0.5) * cellSize, height};
+                origin.y() + (row + 0.5) * cellSize, z};
   }
 };
 

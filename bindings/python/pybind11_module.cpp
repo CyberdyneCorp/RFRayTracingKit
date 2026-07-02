@@ -505,6 +505,7 @@ void bindCoverage(py::module_& m) {
       .def_readwrite("cols", &CoverageGrid::cols)
       .def_readwrite("rows", &CoverageGrid::rows)
       .def_readwrite("height", &CoverageGrid::height)
+      .def_readwrite("cell_heights", &CoverageGrid::cellHeights)
       .def("cell_count", &CoverageGrid::cellCount)
       .def(
           "cell_center",
