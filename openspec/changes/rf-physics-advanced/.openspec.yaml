@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-07-02
+goal: Deepen the CPU RF physics core with multi-edge (Bullington/Deygout) and
+  UTD wedge diffraction, Jones-vector polarization mismatch + depolarizing
+  reflection, per-path Doppler, and a multipath (reflection/diffraction)
+  coverage mode — all additive, default-neutral, and validated against analytic
+  references on the CPU backend

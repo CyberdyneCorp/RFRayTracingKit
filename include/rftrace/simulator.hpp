@@ -17,6 +17,13 @@ namespace rftrace {
 ///   RayLaunch   — stochastic Monte-Carlo ray launch with a receiver capture sphere.
 enum class PropagationMode { ImageMethod, RayLaunch };
 
+/// Diffraction model used when enableDiffraction is set and a link is blocked.
+///   SingleEdge — single dominant knife edge (ITU-R P.526); the default.
+///   Bullington — multi-edge equivalent knife edge from a terrain profile.
+///   Deygout    — multi-edge recursive dominant-edge from a terrain profile.
+/// SingleEdge reproduces the archived behavior bit-for-bit.
+enum class DiffractionModel { SingleEdge, Bullington, Deygout };
+
 /// Knobs controlling a simulation run. Defaults form a runnable configuration
 /// that preserves Phase 1 behavior (image method, point receivers).
 struct SimulationSettings {
@@ -38,6 +45,11 @@ struct SimulationSettings {
 
   /// Enable single knife-edge (ITU-R P.526) diffraction over blocked LOS.
   bool enableDiffraction = false;
+
+  /// Diffraction model applied to a blocked link when enableDiffraction is set.
+  /// Default SingleEdge keeps the archived single dominant knife-edge behavior;
+  /// Bullington / Deygout build a terrain profile and apply the multi-edge loss.
+  DiffractionModel diffractionModel = DiffractionModel::SingleEdge;
 
   /// Enable rain attenuation (ITU-R P.838); rate in mm/hr when enabled.
   bool enableRain = false;
@@ -74,7 +86,12 @@ class Simulator {
   RFResult run(const Scene& scene) const;
 
   /// Evaluate received power/path loss over a coverage grid, treating each cell
-  /// centre as a receiver. Uses the deterministic image method per cell.
+  /// centre as a receiver. With mode == ImageMethod (the default) each cell is
+  /// evaluated exactly per cell (LOS + specular reflections). With mode ==
+  /// RayLaunch, rays are launched once per transmitter with each cell as a
+  /// capture point (radius ≈ cellSize/2) and the captured LOS + reflected
+  /// multipath is accumulated per cell; fully shadowed cells fall back to the
+  /// knife-edge / multi-edge diffraction detour when enableDiffraction is set.
   CoverageResult runCoverage(const Scene& scene, const CoverageGrid& grid) const;
 
   /// Simulate a moving receiver along a route: sample the route's polyline into

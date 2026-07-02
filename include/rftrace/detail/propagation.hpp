@@ -15,6 +15,7 @@
 #include "rftrace/rf/atmospheric.hpp"
 #include "rftrace/rf/free_space_path_loss.hpp"
 #include "rftrace/rf/phase.hpp"
+#include "rftrace/rf/polarization.hpp"
 #include "rftrace/rf/vegetation.hpp"
 #include "rftrace/scene.hpp"
 #include "rftrace/simulator.hpp"
@@ -223,7 +224,19 @@ inline void finishPath(RFPath& path, const Transmitter& tx, const Receiver& rx,
 
   const double extraDb = ctx ? extraPropagationLossDb(*ctx, pts) : 0.0;
 
-  path.pathLossDb = fspl + reflectionLossDb + extraDb;
+  // Polarization mismatch (D3). The path's polarization defaults to the
+  // transmitter's (co-polar); the mismatch against the receiver antenna is
+  // added to the budget. With the default Vertical/Vertical (or `None`) states
+  // this is exactly 0 dB, leaving the archived budget bit-for-bit unchanged.
+  path.polarization = rf::jonesFor(tx.polarization);
+  const double polMismatchDb =
+      (tx.polarization == Polarization::None ||
+       rx.polarization == Polarization::None)
+          ? 0.0
+          : rf::polarizationMismatchDb(path.polarization,
+                                       rf::jonesFor(rx.polarization));
+
+  path.pathLossDb = fspl + reflectionLossDb + extraDb + polMismatchDb;
   path.receivedPowerDbm = tx.powerDbm + gtx + grx - path.pathLossDb;
   path.phaseRad = rf::propagationPhaseRad(len, tx.frequencyHz);
   path.delaySeconds = rf::propagationDelaySeconds(len);

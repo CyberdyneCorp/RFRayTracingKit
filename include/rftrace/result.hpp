@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "rftrace/math.hpp"
+#include "rftrace/rf/polarization.hpp"
 
 namespace rftrace {
 
@@ -32,6 +33,16 @@ struct RFPath {
   int reflections = 0;
   int diffractions = 0;
   std::vector<std::string> materialHits;  ///< materials touched, in order
+
+  /// Doppler frequency shift (Hz) for this path (D4). Defaults to 0 for static
+  /// receivers (point-receiver / coverage runs); the route simulator fills it
+  /// from the derived receiver velocity and the path's arrival direction.
+  double dopplerHz = 0.0;
+
+  /// Tracked polarization state of the arriving wave (Jones vector). Defaults
+  /// to the transmitter polarization (co-polar); `finishPath` sets it from the
+  /// transmitter. Reflections may depolarize it via `rf::reflectDepolarize`.
+  rf::Jones polarization;
 };
 
 /// Aggregated result for one receiver (across all paths from all transmitters).

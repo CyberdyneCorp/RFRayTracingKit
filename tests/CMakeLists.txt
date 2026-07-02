@@ -32,6 +32,7 @@ add_executable(rftrace_tests
   test_phase2_sim.cpp
   test_raylaunch.cpp
   test_coverage.cpp
+  test_coverage_multipath.cpp
   test_geojson.cpp
   test_geo_import.cpp
   test_geotiff.cpp
@@ -42,6 +43,10 @@ add_executable(rftrace_tests
   test_phase2_golden.cpp
   test_phase7_regression.cpp
   test_diffraction.cpp
+  test_multiedge_diffraction.cpp
+  test_utd.cpp
+  test_polarization.cpp
+  test_doppler.cpp
   test_attenuation.cpp
   test_arrays.cpp
   test_mimo.cpp
