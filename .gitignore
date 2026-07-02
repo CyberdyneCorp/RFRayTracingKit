@@ -29,3 +29,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+
+# Built pybind11 extension (placed next to the package)
+bindings/python/rftracekit/*.so
+bindings/python/rftracekit/__pycache__/

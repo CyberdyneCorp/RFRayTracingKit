@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-07-02
+goal: Expose the C++ RF core to Python via a pybind11 native module with an
+  ergonomic snake_case Scene/Simulator/Result API, zero-copy numpy arrays and
+  pandas dataframes, optional pyvista/plotly visualization, and CMake+pyproject
+  packaging — without letting the C++ core depend on Python
