@@ -4,7 +4,7 @@
 ## 1. Diffraction (`diffraction`)
 
 - [ ] 1.1 `rf/diffraction.hpp`: Fresnel parameter v and ITU-R P.526 knife-edge loss (v=0 ≈ 6 dB)
-- [ ] 1.2 Obstacle silhouette-edge candidate enumeration near a blocked LOS
+- [ ] 1.2 Dominant silhouette-edge candidate enumeration near a blocked LOS (single edge; multi-edge deferred)
 - [ ] 1.3 Diffracted-path generation behind `enableDiffraction`; path type `diffraction` + count
 - [ ] 1.4 Tests: v=0 ≈6 dB, monotonic into shadow, clear-LOS ≈0 dB, shadowed rx gains a path, disabled = none
 
@@ -12,7 +12,7 @@
 
 - [ ] 2.1 `rf/atmospheric.hpp`: rain γ_R = k·R^α (P.838) + gaseous approx (P.676)
 - [ ] 2.2 `rf/vegetation.hpp`: Weissberger/P.833 foliage loss vs depth, bounded
-- [ ] 2.3 In-foliage depth from vegetation-tagged geometry along a path
+- [ ] 2.3 In-foliage depth from vegetation-material geometry along a path (material tag; volumes deferred)
 - [ ] 2.4 Wire both into the per-path budget (default off)
 - [ ] 2.5 Tests: rain scales with rate / negligible <5 GHz; foliage grows with depth / 0 at 0; disabled = Phase 1/2 budget
 
@@ -26,12 +26,12 @@
 ## 4. MIMO channel (`mimo-channel`)
 
 - [ ] 4.1 `rf/mimo.hpp`: assemble H (N×M complex) from per-path gains + array responses
-- [ ] 4.2 Capacity log2 det(I + (SNR/M)·H·Hᴴ) + per-stream SINR
+- [ ] 4.2 Narrowband equal-power capacity log2 det(I + (SNR/M)·H·Hᴴ) + per-stream SINR from eigenvalues (water-filling/wideband deferred)
 - [ ] 4.3 Tests: H dims N×M, single-path ≈ rank 1, capacity higher for well-conditioned vs rank-1
 
 ## 5. Cell planning / SINR (`cell-planning`)
 
-- [ ] 5.1 `core/cell_planning.*`: per-receiver SINR (serving vs interferers + noise floor)
+- [ ] 5.1 `core/cell_planning.*`: per-receiver SINR (serving vs interferers + kTB+NF noise floor, configurable bandwidth/NF)
 - [ ] 5.2 Serving-cell selection (best server)
 - [ ] 5.3 SINR coverage map (reuse coverage-grid mode)
 - [ ] 5.4 Extend results-export with serving id / SINR / interference

@@ -35,9 +35,9 @@ unchanged and makes each feature independently testable.
 
 ### D3. Diffraction via geometric edge candidates + knife-edge loss (not UTD)
 Phase 7 finds diffraction over obstacle silhouette edges (top-edge / vertical-edge candidates)
-and applies knife-edge loss from the Fresnel parameter, extending to Bullington/Deygout-style
-multiple edges. Full UTD wedge diffraction is a non-goal. Rationale: matches the source spec's
-"basic diffraction approximation" and is analytically checkable.
+and applies single knife-edge loss from the Fresnel parameter for the dominant edge (see R2;
+Bullington/Deygout multi-edge deferred). Full UTD wedge diffraction is a non-goal. Rationale:
+matches the source spec's "basic diffraction approximation" and is analytically checkable.
 
 ### D4. Arrays/MIMO on Eigen; complex path gains
 Array factor and the MIMO channel matrix are built from per-path complex gains (amplitude +
@@ -79,12 +79,16 @@ when implementing, create focused changes and archive them one at a time):
 6. `route-simulation` (+ ray-simulation/results-export hooks)
 No breaking API changes; all new fields/flags default off.
 
-## Open Questions
+## Resolved Decisions
 
-- Split this into the six sub-changes above for implementation (recommended), or implement as
-  one large change?
-- Diffraction edge model: single knife-edge only first, or Deygout/Bullington multi-edge in
-  the first cut?
-- Vegetation input: tag by material only, or also support explicit vegetation volumes/boxes?
-- SINR noise floor: fixed dBm default vs bandwidth/temperature-derived (kTB + noise figure)?
-- MIMO capacity assumption: equal-power vs water-filling; single-frequency (narrowband) first?
+- **R1 Delivery — six sub-changes.** Implement Phase 7 as the six focused sub-changes in the
+  Migration Plan, each validated and archived independently (matches how Phases 1-4 shipped).
+- **R2 Diffraction — single knife-edge first.** First cut is ITU-R P.526 single dominant-edge
+  loss (v=0 ≈ 6 dB); Deygout/Bullington multiple-edge is deferred to a follow-up. (Refines D3.)
+- **R3 SINR noise floor — kTB + noise figure.** Derive the noise floor from bandwidth B,
+  reference temperature 290 K, and a configurable receiver noise figure (dB); a fixed-dBm
+  override may still be allowed but the default is physically derived. (Refines D5.)
+- **R4 MIMO capacity — equal-power, narrowband first.** Capacity = log2 det(I + (SNR/M)·H·Hᴴ)
+  at a single frequency; water-filling and wideband/subcarrier are deferred. (Refines D4.)
+- **R5 Vegetation input — tag by material first.** Foliage loss applies to path depth through
+  geometry whose material is vegetation; explicit vegetation volumes/boxes are deferred.

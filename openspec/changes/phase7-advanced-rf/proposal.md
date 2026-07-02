@@ -11,8 +11,9 @@ future GPU acceleration.
 
 ## What Changes
 
-- **Diffraction**: knife-edge / multiple-edge diffraction (ITU-R P.526 style) producing
-  diffracted paths over obstacle edges, gated by `SimulationSettings.enableDiffraction`.
+- **Diffraction**: single knife-edge diffraction (ITU-R P.526) producing diffracted paths over
+  the dominant obstacle edge, gated by `SimulationSettings.enableDiffraction` (multiple-edge is
+  a deferred follow-up).
 - **Atmospheric attenuation**: specific attenuation from rain (ITU-R P.838) and gaseous
   absorption (ITU-R P.676 approximation), applied per path length and frequency.
 - **Vegetation attenuation**: foliage loss (Weissberger / ITU-R P.833) when a path traverses
@@ -20,7 +21,8 @@ future GPU acceleration.
 - **Antenna arrays**: array geometry (element positions), per-element excitation/phase, beam
   steering, and array-factor gain feeding the existing antenna-gain link-budget term.
 - **MIMO channel**: per-path direction-of-departure/arrival, phase and polarization combined
-  into a channel matrix H, with a capacity (and per-stream SINR) estimate.
+  into a channel matrix H, with a narrowband equal-power log-det capacity (and per-stream SINR)
+  estimate.
 - **Cell planning / SINR**: aggregate multiple transmitters into serving-cell selection,
   interference, and an SINR figure per receiver and per coverage cell.
 - **Route simulation**: a moving receiver along an ordered set of waypoints producing a

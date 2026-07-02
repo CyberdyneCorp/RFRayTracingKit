@@ -14,8 +14,10 @@ per-element array responses.
 - **THEN** H SHALL be (approximately) rank 1
 
 ### Requirement: Capacity and stream SINR estimate
-The library SHALL compute an estimated MIMO capacity (bits/s/Hz) from H at a given SNR using
-the log-det water-filling/equal-power formula, and expose per-stream SINR.
+The library SHALL compute an estimated narrowband MIMO capacity (bits/s/Hz) from H at a given
+SNR using the equal-power log-det formula C = log2 det(I + (SNR/M)·H·Hᴴ) (M = transmit
+elements), and expose per-stream SINR from the eigenvalues of H·Hᴴ. (Water-filling and
+wideband/subcarrier capacity are deferred to a follow-up.)
 
 #### Scenario: Capacity grows with spatial streams
 - **WHEN** a rich multipath channel (well-conditioned H) is evaluated versus a rank-1 channel
