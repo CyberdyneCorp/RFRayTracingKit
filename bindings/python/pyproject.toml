@@ -1,0 +1,35 @@
+[build-system]
+requires = ["scikit-build-core>=0.9", "pybind11>=2.13.6"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "rftracekit"
+version = "0.1.0"
+description = "Python bindings for the RFTraceKit RF ray-tracing / propagation engine"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Leonardo Araujo dos Santos" }]
+keywords = ["rf", "ray-tracing", "propagation", "wireless", "coverage"]
+dependencies = ["numpy>=1.23"]
+
+[project.optional-dependencies]
+viz = ["pyvista>=0.43", "plotly>=5.0"]
+data = ["pandas>=2.0"]
+all = ["pyvista>=0.43", "plotly>=5.0", "pandas>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/leonardoaraujosantos/RFRayTracingKit"
+Source = "https://github.com/leonardoaraujosantos/RFRayTracingKit"
+
+[tool.scikit-build]
+# Build the whole C++ project (which owns the pybind11 target) from the repo root.
+cmake.source-dir = "../.."
+cmake.version = ">=3.25"
+wheel.packages = ["rftracekit"]
+# The compiled _native extension is emitted into rftracekit/ by the CMake build.
+wheel.py-api = "cp311"
+
+[tool.scikit-build.cmake.define]
+RFTRACE_ENABLE_PYTHON = "ON"
+RFTRACE_BUILD_EXAMPLES = "OFF"

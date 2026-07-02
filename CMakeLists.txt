@@ -70,6 +70,44 @@ if(RFTRACE_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
+# ---- Python bindings ---------------------------------------------------------
+if(RFTRACE_ENABLE_PYTHON)
+  # Locate the interpreter first and have pybind11 use the modern FindPython
+  # (respects Python_EXECUTABLE); this avoids stale include paths baked into some
+  # distribution pybind11 configs.
+  set(PYBIND11_FINDPYTHON ON)
+  find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+
+  # pybind11: prefer a CONFIG-mode package (its cmake dir is on CMAKE_PREFIX_PATH);
+  # fall back to a pinned FetchContent, mirroring the GoogleTest style.
+  find_package(pybind11 CONFIG QUIET)
+  if(NOT pybind11_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(pybind11
+      GIT_REPOSITORY https://github.com/pybind/pybind11.git
+      GIT_TAG        v2.13.6
+    )
+    FetchContent_MakeAvailable(pybind11)
+  endif()
+
+  pybind11_add_module(_native bindings/python/pybind11_module.cpp)
+  target_link_libraries(_native PRIVATE rftrace::rftrace)
+
+  # Drop the compiled extension next to the pure-Python package so tests run with
+  # PYTHONPATH=<repo>/bindings/python.
+  set(RFTRACE_PY_PKG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/rftracekit)
+  set_target_properties(_native PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${RFTRACE_PY_PKG_DIR}
+  )
+  # Multi-config generators use per-config subdirectories; pin those too.
+  foreach(cfg IN LISTS CMAKE_CONFIGURATION_TYPES)
+    string(TOUPPER ${cfg} cfg_upper)
+    set_target_properties(_native PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY_${cfg_upper} ${RFTRACE_PY_PKG_DIR}
+    )
+  endforeach()
+endif()
+
 # ---- Install -----------------------------------------------------------------
 include(GNUInstallDirs)
 install(TARGETS rftrace EXPORT rftraceTargets

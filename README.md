@@ -43,6 +43,35 @@ OpenCL) behind a shared, backend-agnostic RF-physics core. This repository imple
 Ray-launch aggregate power agrees with the image method within **≤1 dB** on the golden
 single-wall scene at a pinned budget (600k rays, 3 m capture radius).
 
+## Phase 3 capabilities (Python bindings)
+
+A pybind11 module (`rftracekit._native`) plus a pure-Python `rftracekit` package expose the
+engine to Python. The C++ core stays Python-free; all coupling lives under `bindings/python/`.
+
+```python
+import rftracekit as rf
+
+scene = rf.Scene()
+scene.add_transmitter(id="tower_1", position=[120, 80, 35], frequency_hz=3.5e9, power_dbm=43)
+scene.add_receiver(id="rx_001", position=[300, 180, 1.5])
+
+result = rf.Simulator(rf.SimulationSettings(mode="raylaunch", max_reflections=3)).run(scene)
+
+df = result.receivers_dataframe()          # pandas (optional)
+pos = result.receiver_positions            # numpy float64[N,3]
+result.to_geojson("paths.geojson", kind="paths")
+result.to_gltf("debug_rays.gltf")
+```
+
+- **NumPy interop**: `receiver_positions` `[N,3]`, `received_power_dbm`/`path_loss_db` `[N]`,
+  `path_points` `[M,3]` + `path_offsets` `[P+1]`, coverage `coverage_array` `[H,W]`.
+- **pandas** (optional): `receivers_dataframe()`, `paths_dataframe()`.
+- **Visualization** (optional, lazy): `rftracekit.viz` + `Result.plot_3d(engine=...)` and
+  `CoverageResult.plot_coverage(engine="plotly")`; the package imports fine without
+  pyvista/plotly/pandas installed.
+- **Build/test**: `just py-build` and `just py-test` (needs a `python3` with `pybind11` +
+  `numpy`). The extension builds only when `-DRFTRACE_ENABLE_PYTHON=ON`.
+
 Out of scope until later phases: GPU backends, Python bindings, terrain/GeoTIFF,
 diffraction, atmospheric/vegetation attenuation, MIMO, route simulation, CZML/3D-Tiles.
 See `openspec/project.md` for the full roadmap.

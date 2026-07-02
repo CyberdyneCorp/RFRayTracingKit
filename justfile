@@ -87,6 +87,27 @@ embree:
     cmake --build build-embree
     ./build-embree/tests/rftrace_tests
 
+# --- Python bindings ---------------------------------------------------------
+# Interpreter for the Python extension (must have pybind11 + numpy installed).
+# Override if needed, e.g. `just py=/usr/bin/python3 py-build`.
+py           := "python3"
+py_build_dir := "build"
+py_path      := justfile_directory() / "bindings/python"
+
+# Configure + build the C++ core and the rftracekit._native extension. The
+# pybind11 CMake dir is resolved from the chosen interpreter at build time.
+py-build:
+    cmake -S . -B {{py_build_dir}} \
+      -DCMAKE_PREFIX_PATH="/opt/homebrew;$({{py}} -c 'import pybind11; print(pybind11.get_cmake_dir())')" \
+      -DPython3_EXECUTABLE="$({{py}} -c 'import sys; print(sys.executable)')" \
+      -DPython_EXECUTABLE="$({{py}} -c 'import sys; print(sys.executable)')" \
+      {{vcpkg_arg}} -DRFTRACE_ENABLE_PYTHON=ON
+    cmake --build {{py_build_dir}} -j
+
+# Run the Python binding tests (requires py-build first; uses PYTHONPATH).
+py-test: py-build
+    PYTHONPATH={{py_path}} {{py}} -m pytest {{py_path}} -q
+
 # Validate all OpenSpec specs and changes.
 spec:
     openspec validate --all --strict
