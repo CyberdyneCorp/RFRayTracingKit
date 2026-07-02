@@ -38,15 +38,19 @@ from ._native import (
     backend_available,
     backend_from_string,
     backend_to_string,
+    gdal_available,
+    load_msi_antenna,
+    parquet_available,
 )
 
 # Submodules (all import-safe without optional deps).
-from . import antennas, io, materials, viz
+from . import antennas, io, materials, mimo, viz
 
 # Ergonomic wrappers.
 from .antennas import omni, omnidirectional
 from .materials import Material
 from .results import CoverageResult, Result
+from .route import Route, RouteResult
 from .scene import Receiver, Scene, SceneError, Transmitter
 from .simulator import CoverageGrid, Simulator, SimulationSettings, make_grid
 
@@ -73,11 +77,18 @@ __all__ = [
     "Simulator",
     "CoverageGrid",
     "make_grid",
+    "Route",
+    "RouteResult",
+    "mimo",
     "PropagationMode",
     "Backend",
     "backend_from_string",
     "backend_to_string",
     "backend_available",
+    # geospatial IO (D1)
+    "load_msi_antenna",
+    "gdal_available",
+    "parquet_available",
     # results
     "Result",
     "CoverageResult",

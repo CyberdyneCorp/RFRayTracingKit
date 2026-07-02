@@ -117,6 +117,16 @@ geo:
     cmake --build build-geo -j
     ctest --test-dir build-geo --output-on-failure
 
+# Build with ALL optional IO deps: GDAL + Arrow/Parquet + libosmium (OSM PBF).
+io:
+    cmake -S . -B build-io \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=/opt/homebrew \
+      {{vcpkg_arg}} -DRFTRACE_ENABLE_GDAL=ON -DRFTRACE_ENABLE_PARQUET=ON \
+      -DRFTRACE_ENABLE_OSMIUM=ON
+    cmake --build build-io -j
+    ctest --test-dir build-io --output-on-failure
+
 # Build with the CUDA/OptiX GPU backend and run its suite (needs NVIDIA + OptiX).
 # Not part of `ci`; expected to fail to configure on non-NVIDIA hosts. Set
 # OptiX_INSTALL_DIR to your OptiX SDK path.

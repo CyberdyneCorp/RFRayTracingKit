@@ -201,6 +201,70 @@ class Result:
         _native.io.export_paths_gltf(self.native, str(path), include_receivers)
         return None
 
+    def to_czml(self, path: Optional[str] = None, scene=None) -> Optional[str]:
+        """Serialize to a Cesium CZML document; write to ``path`` or return it.
+
+        When ``scene`` (a :class:`rftracekit.Scene` or native ``Scene``) is
+        georeferenced, positions are emitted as WGS84 ``cartographicDegrees``;
+        otherwise ``cartesian`` local ENU metres are used.
+        """
+        native_scene = native_of(scene) if scene is not None else None
+        if path is None:
+            if native_scene is not None:
+                return _native.io.result_to_czml_string(self.native, native_scene)
+            return _native.io.result_to_czml_string(self.native)
+        if native_scene is not None:
+            _native.io.export_result_czml(self.native, str(path), native_scene)
+        else:
+            _native.io.export_result_czml(self.native, str(path))
+        return None
+
+    def to_3dtiles(self, directory: str, include_receivers: bool = True) -> None:
+        """Write a Cesium 3D Tiles tileset (``tileset.json`` + ``content.glb``)."""
+        _native.io.export_paths_3dtiles(
+            self.native, str(directory), include_receivers
+        )
+        return None
+
+    def to_parquet(self, path: str) -> None:
+        """Write the per-receiver table to Parquet (requires an Arrow build).
+
+        Raises :class:`RuntimeError` when the extension was built without Parquet.
+        """
+        if not _native.parquet_available():
+            raise RuntimeError(
+                "to_parquet requires a Parquet-enabled build; this rftracekit "
+                "extension was built without Apache Arrow/Parquet"
+            )
+        _native.io.receivers_to_parquet(self.native, str(path))
+        return None
+
+    def to_mimo_json(
+        self,
+        receiver_id: str,
+        tx_array,
+        rx_array,
+        snr_linear: float,
+        path: Optional[str] = None,
+    ) -> Optional[str]:
+        """Serialize the MIMO channel for one receiver to JSON.
+
+        Builds the narrowband channel matrix from receiver ``receiver_id``'s
+        propagation paths and the ``tx_array`` / ``rx_array`` geometries, then
+        emits the channel + capacity (at ``snr_linear``) as JSON; writes to
+        ``path`` or returns the string.
+        """
+        rx = self.native.receiver(receiver_id)
+        if rx is None:
+            raise KeyError(f"no receiver with id {receiver_id!r}")
+        h = _native.mimo.channel_matrix(
+            rx, native_of(tx_array), native_of(rx_array)
+        )
+        if path is None:
+            return _native.io.mimo_to_json_string(h, float(snr_linear))
+        _native.io.export_mimo_json(h, float(snr_linear), str(path))
+        return None
+
     @classmethod
     def from_json(cls, path: str) -> "Result":
         """Load a result previously written with :meth:`to_json`."""
@@ -296,6 +360,29 @@ class CoverageResult:
         if path is None:
             return _native.io.coverage_to_geojson_string(self.native)
         _native.io.export_coverage_geojson(self.native, str(path))
+        return None
+
+    def to_geotiff(
+        self,
+        path: str,
+        metric: str = "power",
+        origin_lat: float = 0.0,
+        origin_lon: float = 0.0,
+        georeferenced: bool = False,
+    ) -> None:
+        """Write a single-band Float32 GeoTIFF heatmap (requires a GDAL build).
+
+        ``metric`` is ``'power'`` (default), ``'path_loss'`` or ``'sinr'``.
+        Raises :class:`RuntimeError` when the extension was built without GDAL.
+        """
+        if not _native.gdal_available():
+            raise RuntimeError(
+                "to_geotiff requires a GDAL-enabled build; this rftracekit "
+                "extension was built without GDAL"
+            )
+        _native.io.export_coverage_geotiff(
+            self.native, str(path), metric, origin_lat, origin_lon, georeferenced
+        )
         return None
 
     # -- plotting -------------------------------------------------------------

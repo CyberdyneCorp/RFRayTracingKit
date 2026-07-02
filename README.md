@@ -175,10 +175,28 @@ default settings, results are identical to Phase 1/2 (enforced by a regression t
   with CSV/JSON export (`Simulator::runRoute`).
 
 See `examples/advanced_rf` (diffraction + two-cell SINR coverage + drive-test route). The
-Phase 7 path-loss toggles are drivable from Python via `SimulationSettings` (route/MIMO/array
-Python APIs are a documented follow-up).
+Phase 7 path-loss toggles are drivable from Python via `SimulationSettings`.
 
-Out of scope until later phases: terrain/GeoTIFF, full UTD diffraction, CZML/3D-Tiles route
+## Geospatial IO & Python surface
+
+**Core import:** glTF/OBJ (Assimp), **GeoJSON**, **CityJSON**, **OSM** (Overpass JSON, `.osm`
+XML — always on; `.osm.pbf` behind `-DRFTRACE_ENABLE_OSMIUM=ON` via libosmium), **MSI** antenna
+patterns, and **GeoTIFF/DEM terrain** (behind `-DRFTRACE_ENABLE_GDAL=ON`). A scene georeference
+(`set_geo_origin` / `geo_project`) projects all geospatial data into the local Z-up ENU frame.
+
+**Core export:** JSON, CSV, GeoJSON, glTF, **CZML** (Cesium), **3D Tiles** (single-tile and a
+hierarchical-LOD quadtree via `exportPaths3DTilesLod`), plus **GeoTIFF heatmap** (GDAL) and
+**Parquet** (Arrow), both flag-gated.
+
+**Python:** the `rftracekit` package exposes the importers/exporters (`scene.load_geojson`/
+`load_cityjson`/`load_osm`/`load_terrain`, `rf.load_msi_antenna`, `result.to_czml`/`to_3dtiles`/
+`to_geotiff`/`to_parquet`), the **route** simulation (`Simulator.run_route` → `RouteResult` with
+per-sample Doppler), and **MIMO** (`rf.mimo.channel_matrix`/`capacity`/`per_stream_sinr`).
+GDAL/Parquet-gated functions are present only when the extension is built with those flags;
+`rf.gdal_available()` / `rf.parquet_available()` probe at runtime. Build all optional IO with
+`just io` (GDAL + Parquet + libosmium).
+
+Out of scope until later phases: full UTD as a selectable path model, CZML/3D-Tiles route
 animation. See `openspec/project.md` for the full roadmap.
 
 ## Building

@@ -6,6 +6,7 @@ from typing import Optional, Sequence
 from . import _native
 from ._util import native_of, parse_backend, parse_mode
 from .results import CoverageResult, Result
+from .route import RouteResult
 
 CoverageGrid = _native.CoverageGrid
 PropagationMode = _native.PropagationMode
@@ -86,6 +87,17 @@ class Simulator:
             self.native.run_coverage(native_of(scene), native_of(grid))
         )
 
+    def run_route(self, scene, route) -> RouteResult:
+        """Simulate a drive-test ``route`` and return a :class:`RouteResult`.
+
+        The route is sampled by arc length; each sample is evaluated as a point
+        receiver and the ordered per-sample metrics (including ``doppler_hz``)
+        are collected in route order.
+        """
+        return RouteResult(
+            self.native.run_route(native_of(scene), native_of(route))
+        )
+
 
 __all__ = [
     "SimulationSettings",
@@ -94,4 +106,5 @@ __all__ = [
     "make_grid",
     "PropagationMode",
     "Backend",
+    "RouteResult",
 ]
