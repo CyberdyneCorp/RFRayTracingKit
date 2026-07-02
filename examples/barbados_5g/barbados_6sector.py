@@ -193,10 +193,28 @@ def render_3d(buildings):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
+
+    # A ring of receivers around the full 360 deg (every 30 deg, two distances)
+    # so every sector illuminates some, plus multipath via ray launch.
+    rxs = []
+    for adeg in range(0, 360, 30):
+        a = math.radians(adeg)
+        for d in (170.0, 300.0):
+            rxs.append((d * math.cos(a), d * math.sin(a)))
 
     near = [(r, h) for r, h in buildings
             if min(math.hypot(x, y) for x, y in r) < RENDER_R]
+    nb = []
+    for ring, h in near:
+        base.extrude(ring, h, nb)
+    scene = scene_with(nb, [], [sector_tx(i, az) for i, az in enumerate(AZIMUTHS)])
+    for j, (x, y) in enumerate(rxs):
+        scene.add_receiver(id=f"rx{j}", position=[x, y, 1.5])
+    s = rf.SimulationSettings(mode="raylaunch", max_reflections=2,
+                              rays_per_transmitter=200_000, capture_radius=5.0, seed=1)
+    res = rf.Simulator(s).run(scene)
+
     fig = plt.figure(figsize=(13, 10))
     ax = fig.add_subplot(111, projection="3d")
     polys = []
@@ -207,21 +225,34 @@ def render_3d(buildings):
             polys.append([(x0, y0, 0), (x1, y1, 0), (x1, y1, h), (x0, y0, h)])
         polys.append([(x, y, h) for x, y in r])
     ax.add_collection3d(Poly3DCollection(polys, facecolor="#c2c6cc",
-                        edgecolor="#8a909a", linewidths=0.1, alpha=0.3))
+                        edgecolor="#8a909a", linewidths=0.1, alpha=0.28))
+
+    # Multipath rays colored by received power.
+    segs, powers = [], []
+    for r in res.native.receivers:
+        for p in r.paths:
+            pts = np.asarray(p.points)
+            for i in range(len(pts) - 1):
+                segs.append([pts[i], pts[i + 1]]); powers.append(p.received_power_dbm)
+    if segs:
+        norm = plt.Normalize(np.percentile(powers, 5), np.percentile(powers, 95))
+        cols = [plt.cm.RdYlGn(norm(pw)) for pw in powers]
+        ax.add_collection3d(Line3DCollection(segs, colors=cols, linewidths=0.4, alpha=0.5))
 
     tx = [0.0, 0.0, MAST_H]
     for i, az in enumerate(AZIMUTHS):
         X, Y, Z, G = base.antenna_balloon(sector_array(az), beam_dir(az), tx,
                                           scale=95.0, nlat=48, nlon=96)
         ax.plot_surface(X, Y, Z, color=SECTOR_COLORS[i], rstride=2, cstride=2,
-                        linewidth=0, antialiased=True, shade=True, alpha=0.85)
-    # Pole.
-    ax.plot([0, 0], [0, 0], [0, MAST_H], color="0.2", lw=2)
+                        linewidth=0, antialiased=True, shade=True, alpha=0.8)
+    ax.plot([0, 0], [0, 0], [0, MAST_H], color="0.2", lw=2)  # pole
     ax.scatter(*tx, c="black", marker="*", s=180, depthshade=False,
                label="6-sector site (7.125 GHz, 30 m)")
+    ax.scatter([x for x, _ in rxs], [y for _, y in rxs], [1.5] * len(rxs),
+               c="#111", s=22, depthshade=False, label="Receivers")
     ax.set_xlim(-RENDER_R, RENDER_R); ax.set_ylim(-RENDER_R, RENDER_R); ax.set_zlim(0, 150)
     ax.set_xlabel("East (m)"); ax.set_ylabel("North (m)"); ax.set_zlabel("z (m)")
-    ax.set_title("6-sector 360° site — radiation lobes on a 30 m pole (Station Hill)")
+    ax.set_title("6-sector 360° site — lobes + multipath rays on a 30 m pole (Station Hill)")
     ax.view_init(elev=32, azim=-60)
     ax.legend(loc="upper left")
     fig.savefig(os.path.join(HERE, "barbados_6sector_3d.png"), dpi=130, bbox_inches="tight")
