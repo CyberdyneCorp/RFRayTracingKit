@@ -51,6 +51,22 @@ one coverage layer per sector and produces:
 PYTHONPATH=bindings/python python3 examples/barbados_5g/barbados_6sector.py
 ```
 
+## Antenna-clearance check
+
+`antenna_clearance.py` verifies the mounting geometry: a **12 m pole on a 16 m host
+building** puts the antenna **28 m above the building's ground** (≈62.7 m ASL at this
+site). It uses the DEM + OSM building heights to compute, for every *immediate*
+building (≤150 m), `antenna_elevation − (terrain + building_height)`, and reports the
+minimum clearance and any building within a target margin (default 6 m).
+
+```bash
+PYTHONPATH=bindings/python python3 examples/barbados_5g/antenna_clearance.py
+```
+
+At the modeled heights the antenna clears all immediate buildings by ~20 m — but that
+depends on neighbour heights, which are mostly the OSM 6 m default here, so re-check
+with real (LiDAR/surveyed) heights before trusting the margin.
+
 ## Notes / honest limitations
 
 - OSM heights are sparse here, so most buildings use a 6 m default — building

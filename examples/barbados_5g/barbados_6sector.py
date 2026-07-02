@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""6-sector 360 deg 5G site at 7.125 GHz on a 30 m pole, Station Hill Bridgetown.
+"""6-sector 360 deg 5G site at 7.125 GHz on a 12 m pole on a 16 m building, Station Hill Bridgetown.
 
-Six directional sectors 60 deg apart share one 30 m mast. Reuses the terrain-aware
+Six directional sectors 60 deg apart share one 12 m pole on a 16 m building. Reuses the terrain-aware
 OSM scene from barbados_5g.py (buildings on the DEM + a terrain surface). Produces,
 over a 3 km radius: best-server coverage, a serving-sector map, an inter-sector
 SINR map, and a 3D close-up of all six lobes + multipath over the terrain.
@@ -26,7 +26,9 @@ import rftracekit as rf
 from rftracekit import _native
 
 FREQ = 7.125e9
-MAST_H = 30.0
+MOUNT_BUILDING_H = 16.0     # host building roof height (m)
+POLE_H = 12.0               # pole above the roof (m)
+MAST_H = MOUNT_BUILDING_H + POLE_H  # antenna 28 m above the host building ground
 EIRP_DBM = 46.0
 DOWNTILT_DEG = 8.0
 N_SECTORS = 6
@@ -239,7 +241,7 @@ def render_3d(buildings, d, site):
                         linewidth=0, antialiased=True, shade=True, alpha=0.8)
     ax.plot([0, 0], [0, 0], [site, site + MAST_H], color="0.2", lw=2)
     ax.scatter(*tx, c="black", marker="*", s=180, depthshade=False,
-               label="6-sector site (7.125 GHz, 30 m)")
+               label="6-sector site (7.125 GHz, 28 m AGL)")
     ax.scatter([x for x, _ in rxs], [y for _, y in rxs],
                [float(z) + 1.5 for z in rzs], c="#111", s=22, depthshade=False,
                label="Receivers")

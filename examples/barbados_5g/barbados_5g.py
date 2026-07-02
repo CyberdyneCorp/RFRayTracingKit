@@ -4,7 +4,7 @@
 Uses real OpenStreetMap building + vegetation footprints (fetch_osm.py) AND an
 open DEM (AWS terrarium tiles, dem.py) so buildings sit on their real ground
 elevation and the terrain surface itself blocks/shadows. Places a 3.5 GHz
-beamformed macro sector on a 30 m mast at the site and:
+beamformed macro sector on a 12 m pole atop a 16 m building (28 m AGL) at the site and:
   * computes a received-power coverage map over a 3 km radius (terrain + buildings
     block; vegetation attenuates), evaluated at terrain height, and
   * renders a top-down coverage heatmap and a 3D close-up with the terrain, the
@@ -32,7 +32,9 @@ from rftracekit import _native
 
 LAT0, LON0 = 13.11220679386025, -59.603538511368605
 SITE_R = 3000.0
-MAST_H = 30.0
+MOUNT_BUILDING_H = 16.0     # host building roof height (m)
+POLE_H = 12.0               # pole above the roof (m)
+MAST_H = MOUNT_BUILDING_H + POLE_H  # antenna 28 m above the host building ground
 FREQ = 3.5e9
 EIRP_DBM = 49.0
 BEAM_AZ_DEG = 20.0
@@ -251,7 +253,7 @@ def render_coverage(power, buildings, path):
     ax.add_collection(PolyCollection(polys, facecolors="none",
                                      edgecolors="k", linewidths=0.15, alpha=0.35))
     ax.add_patch(plt.Circle((0, 0), SITE_R, fill=False, color="white", ls="--", lw=1))
-    ax.plot(0, 0, "k^", ms=14, label="5G sector (3.5 GHz, 30 m)")
+    ax.plot(0, 0, "k^", ms=14, label="5G sector (3.5 GHz, 28 m AGL)")
     az = math.radians(BEAM_AZ_DEG)
     ax.arrow(0, 0, 700 * math.cos(az), 700 * math.sin(az), width=25,
              color="magenta", alpha=0.7, length_includes_head=True)
