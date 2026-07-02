@@ -75,14 +75,16 @@ def build_scene():
     mesh(box(11.6, 8.4, 0.0, 12.4, 9.4, 1.3), "metal")   # filing cabinet
     mesh(box(10.0, 4.7, 0.0, 10.5, 5.3, H), "concrete")  # pillar
 
-    # Wi-Fi AP: ceiling-mounted 4x4 planar array @ 2.4 GHz, steered straight down.
+    # Wi-Fi AP: ceiling-mounted 8x8 planar array @ 2.4 GHz, steered straight down.
+    # ~1.0 wavelength spacing gives a wide aperture with pronounced grating/side
+    # lobes -> a dramatic multi-lobe radiation pattern.
     lam = 3e8 / 2.4e9
     tx = _native.Transmitter()
     tx.id = "ap"
     tx.position = [3.5, 5.0, 2.9]
     tx.frequency_hz = 2.4e9
     tx.power_dbm = 20.0
-    tx.array = _native.uniform_planar_array(4, 4, 0.5 * lam, 0.5 * lam, 2.4e9,
+    tx.array = _native.uniform_planar_array(8, 8, 1.0 * lam, 1.0 * lam, 2.4e9,
                                             [1, 0, 0], [0, 1, 0], 0.0)
     tx.beam_steering = [0, 0, -1]
     scene.native.add_transmitter(tx)
@@ -97,8 +99,13 @@ def build_scene():
             np.array([0, 0, -1.0]), np.array(rx, dtype=float))
 
 
-def antenna_balloon(array, beam, center, scale=1.6, nlat=54, nlon=108):
-    """Sample the array-factor gain over a sphere -> a radiation-pattern surface."""
+def antenna_balloon(array, beam, center, scale=2.0, dynamic_range_db=30.0,
+                    nlat=90, nlon=180):
+    """Sample the array-factor gain over a sphere -> a radiation-pattern surface.
+
+    Radius maps the top `dynamic_range_db` below the peak so the main lobe and
+    every side/grating lobe within that window show as distinct petals.
+    """
     th = np.linspace(1e-3, np.pi - 1e-3, nlat)
     ph = np.linspace(0, 2 * np.pi, nlon)
     G = np.empty((nlat, nlon))
@@ -108,8 +115,8 @@ def antenna_balloon(array, beam, center, scale=1.6, nlat=54, nlon=108):
         for j, f in enumerate(ph):
             G[i, j] = _native.steered_gain_dbi(
                 array, beam, [st * np.cos(f), st * np.sin(f), ct])
-    gmin = np.percentile(G, 10)
-    r = np.clip((G - gmin) / (G.max() - gmin), 0.0, 1.0) * scale
+    gmax = G.max()
+    r = np.clip((G - (gmax - dynamic_range_db)) / dynamic_range_db, 0.0, 1.0) * scale
     T, F = np.meshgrid(th, ph, indexing="ij")
     X = center[0] + r * np.sin(T) * np.cos(F)
     Y = center[1] + r * np.sin(T) * np.sin(F)
@@ -136,7 +143,7 @@ def main():
             polylines.append(np.asarray(p.points, dtype=float))
             powers.append(p.received_power_dbm)
     print(f"[wifi_indoor] {sum(len(t) for t, _ in meshes)} triangles, "
-          f"4x4 array AP @ 2.4 GHz, {len(rx_pos)} receivers, {reached} reached, "
+          f"8x8 array AP @ 2.4 GHz, {len(rx_pos)} receivers, {reached} reached, "
           f"{len(polylines)} captured paths")
     if not polylines:
         print("no captured paths; increase capture_radius or rays")
@@ -187,7 +194,7 @@ def render_mpl(meshes, tx_pos, rx_pos, polylines, powers, balloon, png_path):
                     shade=False, alpha=0.9)
 
     ax.scatter(*tx_pos, c="black", marker="*", s=260, depthshade=False,
-               label="Wi-Fi AP (2.4 GHz, 4x4 array)")
+               label="Wi-Fi AP (2.4 GHz, 8x8 array)")
     ax.scatter(rx_pos[:, 0], rx_pos[:, 1], rx_pos[:, 2], c="#111", marker="o",
                s=42, depthshade=False, label="Receivers")
 
@@ -250,7 +257,7 @@ def render_plotly(meshes, tx_pos, rx_pos, polylines, powers, balloon, html_path)
 
     fig.add_trace(go.Scatter3d(x=[tx_pos[0]], y=[tx_pos[1]], z=[tx_pos[2]],
                   mode="markers", marker=dict(size=6, color="black", symbol="diamond"),
-                  name="Wi-Fi AP (4x4 array)"))
+                  name="Wi-Fi AP (8x8 array)"))
     fig.add_trace(go.Scatter3d(x=rx_pos[:, 0], y=rx_pos[:, 1], z=rx_pos[:, 2],
                   mode="markers", marker=dict(size=4, color="#111"), name="Receivers"))
 
