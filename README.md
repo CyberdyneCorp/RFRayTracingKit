@@ -93,6 +93,65 @@ kernel). RF physics stays backend-agnostic — Metal only accelerates traversal.
 > foundation for a future batched simulator path. Today Metal is a validated, batch-capable
 > traversal backend and the reference for the CUDA/OpenCL backends to come.
 
+## OpenCL GPU backend
+
+A portable **OpenCL** backend implements the same `IBackend` traversal contract. OpenCL 1.2
+has no hardware ray tracing, so the backend builds a custom **flat BVH** from the scene
+triangles (exposed additively from the CPU `BVH`), uploads it as float32 device buffers, and
+traverses it with a runtime-compiled OpenCL C kernel that uses an explicit fixed-size stack
+(no recursion) and a Möller–Trumbore triangle test. A closest-hit kernel keeps the nearest
+hit; an any-hit kernel early-exits at the first occluder. RF physics stays backend-agnostic —
+OpenCL only accelerates traversal, and all public types remain double precision (values
+convert to float only inside the device buffers).
+
+- **Batched dispatch**: `closestHitBatch` / `occludedBatch` upload the rays once and service
+  the whole batch in a single `clEnqueueNDRangeKernel`; single-ray queries run as a batch of 1.
+- **CPU-vs-OpenCL parity** is validated on the golden scenes + hundreds of random triangles
+  (thousands of rays per scene; float-vs-double tolerance `|Δt| ≤ max(1e-2 m, 1e-4·|t|)`,
+  matching triangle indices for well-separated geometry), plus a determinism check. Tests
+  `GTEST_SKIP` when no OpenCL device is present.
+- **Selection / fallback**: `Backend::OpenCL` is used when built with `-DRFTRACE_ENABLE_OPENCL=ON`
+  (which requires `find_package(OpenCL)` to succeed, defining `RFTRACE_HAVE_OPENCL`) and a GPU
+  device exists at runtime; otherwise the engine falls back to CPU.
+- Build/run: `just opencl` (configures `build-opencl` with the flag and runs its ctest). OpenCL
+  is not part of the default `ci` recipe.
+
+> Verified on Apple OpenCL 1.2 (Apple M2 Max) and portable to other OpenCL 1.2+ GPUs. Apple's
+> OpenCL is deprecated but functional; the build defines `CL_SILENCE_DEPRECATION` and
+> `CL_TARGET_OPENCL_VERSION=120` to pin/quiet the API.
+
+## CUDA / OptiX GPU backend
+
+A native **NVIDIA CUDA/OptiX** backend implements the same `IBackend` traversal contract with
+hardware ray tracing (RT cores). `build()` uploads float32 vertex/index buffers and builds an
+OptiX geometry acceleration structure (GAS) with compaction; a single `optixLaunch` over device
+programs (raygen + closesthit + miss, compiled to PTX and loaded at runtime via
+`optixModuleCreate`) intersects each ray batch. The primitive index equals the `Triangle`
+index, so hits map straight back. RF physics stays backend-agnostic — CUDA only accelerates
+traversal, and all public types remain double precision (values convert to float only inside
+the device buffers).
+
+- **Batched dispatch**: `closestHitBatch` / `occludedBatch` upload the rays once and service the
+  whole batch in one `optixLaunch` (closest-hit uses `OPTIX_RAY_FLAG_DISABLE_ANYHIT`; occlusion
+  adds `OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT`); single-ray queries run as a batch of 1.
+- **CPU-vs-CUDA parity** tests mirror the Metal/OpenCL suites (float-vs-double tolerance
+  `|Δt| ≤ max(1e-2 m, 1e-4·|t|)`, matching triangle indices for well-separated geometry, plus a
+  determinism check). Tests `GTEST_SKIP` when no CUDA device is present.
+- **Selection / fallback**: `Backend::CUDA` is used when built with `-DRFTRACE_ENABLE_CUDA=ON`
+  (which requires `find_package(CUDAToolkit)` and an OptiX SDK, defining `RFTRACE_HAVE_CUDA`) and
+  a device exists at runtime; otherwise the engine falls back to CPU.
+- Build/run: `just cuda` (configures `build-cuda` with the flag and runs its ctest). Set
+  `-DOptiX_INSTALL_DIR=/path/to/OptiX-SDK` (the directory containing `include/optix.h`); tune the
+  device PTX target with `-DCMAKE_CUDA_ARCHITECTURES`. CUDA is not part of the default `ci`
+  recipe. On a host without a CUDA Toolkit / OptiX SDK the configure step fails fast with a clear
+  message.
+
+> **UNVERIFIED on non-NVIDIA hosts.** This backend is authored to the CUDA runtime + OptiX 7.7/8
+> host API and mirrors the working Metal backend, but it has **not been compiled or run** on the
+> Apple development host (no `nvcc` / OptiX). Enabling `-DRFTRACE_ENABLE_CUDA=ON` there fails at
+> configure time by design. It must be validated on NVIDIA + OptiX hardware; the default build
+> (flag off) never compiles any CUDA source.
+
 ## Phase 7 capabilities (advanced RF)
 
 Physically richer propagation and system-level metrics, all on the CPU backend and validated
@@ -119,8 +178,8 @@ See `examples/advanced_rf` (diffraction + two-cell SINR coverage + drive-test ro
 Phase 7 path-loss toggles are drivable from Python via `SimulationSettings` (route/MIMO/array
 Python APIs are a documented follow-up).
 
-Out of scope until later phases: CUDA/OpenCL backends, terrain/GeoTIFF, full UTD diffraction,
-CZML/3D-Tiles route animation. See `openspec/project.md` for the full roadmap.
+Out of scope until later phases: terrain/GeoTIFF, full UTD diffraction, CZML/3D-Tiles route
+animation. See `openspec/project.md` for the full roadmap.
 
 ## Building
 
