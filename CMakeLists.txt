@@ -32,11 +32,14 @@ add_library(rftrace
   src/scene.cpp
   src/antenna.cpp
   src/backends/cpu_nanort/cpu_backend.cpp
+  src/backends/cpu_nanort/raylaunch.cpp
   src/simulator.cpp
   src/importers/mesh_importer.cpp
   src/importers/material_importer.cpp
   src/exporters/json_exporter.cpp
   src/exporters/csv_exporter.cpp
+  src/exporters/geojson_exporter.cpp
+  src/exporters/gltf_exporter.cpp
 )
 add_library(rftrace::rftrace ALIAS rftrace)
 

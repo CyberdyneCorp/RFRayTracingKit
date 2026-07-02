@@ -9,6 +9,9 @@ vcpkg_installed/
 # Example output artifacts
 /simple_los.*
 /city_reflection.*
+/coverage.*
+/paths.*
+/debug_rays.*
 
 # CMake
 CMakeCache.txt

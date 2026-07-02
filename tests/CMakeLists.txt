@@ -27,9 +27,20 @@ add_executable(rftrace_tests
   test_simulation.cpp
   test_results.cpp
   test_golden.cpp
+  test_phase2_sim.cpp
+  test_raylaunch.cpp
+  test_coverage.cpp
+  test_geojson.cpp
+  test_gltf.cpp
+  test_phase2_golden.cpp
 )
+# nlohmann_json (GeoJSON tests) and assimp (glTF re-import test) are used
+# directly by the test sources.
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 target_link_libraries(rftrace_tests
-  PRIVATE rftrace::rftrace GTest::gtest GTest::gtest_main)
+  PRIVATE rftrace::rftrace GTest::gtest GTest::gtest_main
+          nlohmann_json::nlohmann_json assimp::assimp)
 
 include(GoogleTest)
 # Enumerate tests at ctest time (not build time) so the build never runs the

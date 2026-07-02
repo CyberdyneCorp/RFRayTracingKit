@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "rftrace/coverage.hpp"
 #include "rftrace/result.hpp"
 
 namespace rftrace::io {
@@ -17,5 +18,11 @@ RFResult resultFromJsonString(const std::string& text);
 
 /// Load a result from a JSON file.
 RFResult loadResultJson(const std::string& path);
+
+/// Serialize a coverage result to JSON (grid metadata + row-major arrays).
+std::string coverageToJsonString(const CoverageResult& coverage);
+
+/// Write a coverage result to a JSON file.
+void exportCoverageJson(const CoverageResult& coverage, const std::string& path);
 
 }  // namespace rftrace::io
