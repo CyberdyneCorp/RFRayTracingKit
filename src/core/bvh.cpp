@@ -65,6 +65,14 @@ void BVH::buildRange(std::uint32_t nodeIndex, std::uint32_t begin,
   buildRange(static_cast<std::uint32_t>(leftIndex + 1), split, end);
 }
 
+std::vector<BVH::FlatNode> BVH::flatNodes() const {
+  std::vector<FlatNode> out;
+  out.reserve(nodes_.size());
+  for (const Node& n : nodes_)
+    out.push_back(FlatNode{n.box.lo, n.box.hi, n.left, n.start, n.count});
+  return out;
+}
+
 Hit BVH::closestHit(const Ray& ray) const {
   Hit best;
   if (nodes_.empty()) return best;

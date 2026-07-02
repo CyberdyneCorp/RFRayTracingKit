@@ -43,6 +43,8 @@ add_executable(rftrace_tests
   test_phase7_integration.cpp
   test_metal.cpp
   test_metal_parity.cpp
+  test_opencl_parity.cpp
+  test_cuda_parity.cpp
 )
 # nlohmann_json (GeoJSON tests) and assimp (glTF re-import test) are used
 # directly by the test sources.

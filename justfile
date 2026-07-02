@@ -97,6 +97,28 @@ metal:
     cmake --build build-metal -j
     ctest --test-dir build-metal --output-on-failure
 
+# Build with the OpenCL GPU backend and run its suite (needs an OpenCL device).
+# Not part of `ci`; the parity tests skip at runtime when no OpenCL device is
+# present. Verified on Apple OpenCL 1.2 (M2 Max).
+opencl:
+    cmake -S . -B build-opencl \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=/opt/homebrew \
+      {{vcpkg_arg}} -DRFTRACE_ENABLE_OPENCL=ON
+    cmake --build build-opencl -j
+    ctest --test-dir build-opencl --output-on-failure
+
+# Build with the CUDA/OptiX GPU backend and run its suite (needs NVIDIA + OptiX).
+# Not part of `ci`; expected to fail to configure on non-NVIDIA hosts. Set
+# OptiX_INSTALL_DIR to your OptiX SDK path.
+cuda:
+    cmake -S . -B build-cuda \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=/opt/homebrew \
+      {{vcpkg_arg}} -DRFTRACE_ENABLE_CUDA=ON
+    cmake --build build-cuda -j
+    ctest --test-dir build-cuda --output-on-failure
+
 # --- Python bindings ---------------------------------------------------------
 # Interpreter for the Python extension (must have pybind11 + numpy installed).
 # Override if needed, e.g. `just py=/usr/bin/python3 py-build`.
@@ -131,4 +153,4 @@ install prefix="_install": build
 
 # Remove all build directories.
 clean:
-    rm -rf {{build_dir}} build-debug build-gcc build-asan build-embree
+    rm -rf {{build_dir}} build-debug build-gcc build-asan build-embree build-metal build-opencl build-cuda

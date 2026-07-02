@@ -74,6 +74,77 @@ if(RFTRACE_ENABLE_METAL AND APPLE)
     "-framework Metal" "-framework Foundation")
 endif()
 
+# ---- OpenCL GPU backend ------------------------------------------------------
+# OpenCL 1.2 has no hardware ray tracing, so this backend traverses a custom flat
+# BVH with a runtime-compiled OpenCL C kernel. Compiled only when explicitly
+# enabled and OpenCL is found. RFTRACE_HAVE_OPENCL is PUBLIC so the guarded
+# factory header can key off it. The deprecation macros pin/quiet the OpenCL 1.2
+# API on macOS (Apple's OpenCL is deprecated but functional).
+if(RFTRACE_ENABLE_OPENCL)
+  find_package(OpenCL REQUIRED)
+  target_sources(rftrace PRIVATE src/backends/opencl/opencl_backend.cpp)
+  target_link_libraries(rftrace PRIVATE OpenCL::OpenCL)
+  target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_OPENCL=1)
+  target_compile_definitions(rftrace PRIVATE
+    CL_SILENCE_DEPRECATION CL_TARGET_OPENCL_VERSION=120)
+endif()
+
+# ---- CUDA / OptiX GPU backend ------------------------------------------------
+# Hardware ray tracing on NVIDIA GPUs: OptiX builds the acceleration structure
+# and a single optixLaunch intersects each ray batch (device programs in
+# cuda_programs.cu are compiled to PTX and loaded at runtime). Compiled only when
+# explicitly enabled AND both the CUDA Toolkit and an OptiX SDK are found.
+# RFTRACE_HAVE_CUDA is PUBLIC so the guarded factory header can key off it.
+#
+# UNVERIFIED on non-NVIDIA hosts: with no CUDA Toolkit / OptiX SDK this block
+# FATAL_ERRORs at configure time with a clear hint — the expected behaviour on,
+# e.g., an Apple host. It has not been compiled or run on this machine.
+if(RFTRACE_ENABLE_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+
+  # OptiX ships as headers only (the implementation is loaded from the driver at
+  # runtime via optix_stubs). Locate it through OptiX_INSTALL_DIR.
+  if(NOT DEFINED OptiX_INSTALL_DIR AND DEFINED ENV{OptiX_INSTALL_DIR})
+    set(OptiX_INSTALL_DIR "$ENV{OptiX_INSTALL_DIR}")
+  endif()
+  if(NOT OptiX_INSTALL_DIR OR NOT EXISTS "${OptiX_INSTALL_DIR}/include/optix.h")
+    message(FATAL_ERROR
+      "RFTRACE_ENABLE_CUDA=ON requires the OptiX SDK, but it was not found. "
+      "Set -DOptiX_INSTALL_DIR=/path/to/OptiX-SDK (the directory containing "
+      "include/optix.h). CUDA Toolkit: found via find_package(CUDAToolkit). "
+      "This backend needs NVIDIA hardware + OptiX and cannot be built on hosts "
+      "without them (e.g. Apple/AMD).")
+  endif()
+
+  enable_language(CUDA)
+
+  # Device programs -> a single PTX file (one CUDA architecture so exactly one
+  # PTX object is produced; tune with -DCMAKE_CUDA_ARCHITECTURES).
+  add_library(rftrace_cuda_ptx OBJECT src/backends/cuda/cuda_programs.cu)
+  set_target_properties(rftrace_cuda_ptx PROPERTIES
+    CUDA_PTX_COMPILATION ON)
+  if(NOT CMAKE_CUDA_ARCHITECTURES)
+    set_target_properties(rftrace_cuda_ptx PROPERTIES CUDA_ARCHITECTURES 60)
+  endif()
+  target_include_directories(rftrace_cuda_ptx PRIVATE
+    "${OptiX_INSTALL_DIR}/include")
+
+  # Write the compiled PTX path into a generated header the host TU includes.
+  # $<TARGET_OBJECTS> on a PTX-compilation target expands to the .ptx file.
+  set(RFTRACE_CUDA_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/cuda")
+  file(GENERATE
+    OUTPUT "${RFTRACE_CUDA_GEN_DIR}/rftrace_cuda_ptx_path.h"
+    CONTENT "#pragma once\n#define RFTRACE_CUDA_PTX_FILE \"$<TARGET_OBJECTS:rftrace_cuda_ptx>\"\n")
+
+  target_sources(rftrace PRIVATE src/backends/cuda/cuda_backend.cpp)
+  add_dependencies(rftrace rftrace_cuda_ptx)
+  target_include_directories(rftrace PRIVATE
+    "${OptiX_INSTALL_DIR}/include"
+    "${RFTRACE_CUDA_GEN_DIR}")
+  target_link_libraries(rftrace PRIVATE CUDA::cudart CUDA::cuda_driver)
+  target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_CUDA=1)
+endif()
+
 # ---- Tests -------------------------------------------------------------------
 if(RFTRACE_BUILD_TESTS)
   enable_testing()

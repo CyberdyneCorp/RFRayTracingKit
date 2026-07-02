@@ -7,6 +7,14 @@
 #include "rftrace/backends/metal_backend.hpp"
 #endif
 
+#if RFTRACE_HAVE_OPENCL
+#include "rftrace/backends/opencl_backend.hpp"
+#endif
+
+#if RFTRACE_HAVE_CUDA
+#include "rftrace/backends/cuda_backend.hpp"
+#endif
+
 namespace rftrace {
 
 namespace {
@@ -79,9 +87,18 @@ bool backendAvailable(Backend backend) {
 #else
       return false;
 #endif
-    case Backend::CUDA:
     case Backend::OpenCL:
-      return false;  // not compiled in this build
+#if RFTRACE_HAVE_OPENCL
+      return openclDeviceAvailable();
+#else
+      return false;
+#endif
+    case Backend::CUDA:
+#if RFTRACE_HAVE_CUDA
+      return cudaDeviceAvailable();
+#else
+      return false;
+#endif
   }
   return false;
 }
@@ -99,6 +116,30 @@ std::unique_ptr<IBackend> makeBackend(Backend backend, bool allowFallback) {
     } catch (const std::exception&) {
       // Runtime kernel/AS build failure: treat the backend as unavailable and
       // fall back to CPU when permitted, rather than propagating.
+      if (!allowFallback) throw;
+    }
+  }
+#endif
+
+#if RFTRACE_HAVE_OPENCL
+  if (backend == Backend::OpenCL && openclDeviceAvailable()) {
+    try {
+      return makeOpenclBackend();
+    } catch (const std::exception&) {
+      // Runtime kernel-compile/device failure: treat the backend as unavailable
+      // and fall back to CPU when permitted, rather than propagating.
+      if (!allowFallback) throw;
+    }
+  }
+#endif
+
+#if RFTRACE_HAVE_CUDA
+  if (backend == Backend::CUDA && cudaDeviceAvailable()) {
+    try {
+      return makeCudaBackend();
+    } catch (const std::exception&) {
+      // Runtime driver/OptiX/PTX/AS-build failure: treat the backend as
+      // unavailable and fall back to CPU when permitted, rather than propagating.
       if (!allowFallback) throw;
     }
   }
