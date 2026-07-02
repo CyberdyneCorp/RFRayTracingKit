@@ -35,3 +35,9 @@ __pycache__/
 # Built pybind11 extension (placed next to the package)
 bindings/python/rftracekit/*.so
 bindings/python/rftracekit/__pycache__/
+
+# wifi_indoor example generated artifacts
+examples/wifi_indoor/wifi_indoor.png
+examples/wifi_indoor/wifi_indoor.html
+examples/wifi_indoor/wifi_paths.gltf
+examples/wifi_indoor/wifi_receivers.geojson

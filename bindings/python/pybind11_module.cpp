@@ -188,6 +188,43 @@ void bindAntenna(py::module_& m) {
                               const py::handle& dir) {
         return a.gainTowards(toVec3(dir));
       });
+
+  // Antenna arrays (Phase 7) + array-factor gain.
+  py::class_<rf::AntennaArray>(m, "AntennaArray")
+      .def(py::init<>())
+      .def_readwrite("frequency_hz", &rf::AntennaArray::frequencyHz)
+      .def_readwrite("element_gain_dbi", &rf::AntennaArray::elementGainDbi)
+      .def("size", &rf::AntennaArray::size);
+
+  m.def(
+      "uniform_linear_array",
+      [](std::size_t count, double spacing, double freq, py::object axis,
+         double eg) {
+        return rf::uniformLinearArray(count, spacing, freq, toVec3(axis), eg);
+      },
+      py::arg("count"), py::arg("spacing_m"), py::arg("frequency_hz"),
+      py::arg("axis") = py::make_tuple(0.0, 1.0, 0.0),
+      py::arg("element_gain_dbi") = 0.0);
+
+  m.def(
+      "uniform_planar_array",
+      [](std::size_t nx, std::size_t ny, double dx, double dy, double freq,
+         py::object axisX, py::object axisY, double eg) {
+        return rf::uniformPlanarArray(nx, ny, dx, dy, freq, toVec3(axisX),
+                                      toVec3(axisY), eg);
+      },
+      py::arg("nx"), py::arg("ny"), py::arg("dx_m"), py::arg("dy_m"),
+      py::arg("frequency_hz"), py::arg("axis_x") = py::make_tuple(1.0, 0.0, 0.0),
+      py::arg("axis_y") = py::make_tuple(0.0, 0.0, 1.0),
+      py::arg("element_gain_dbi") = 0.0);
+
+  // Array-factor gain (dBi) toward `direction` when steered at `beam_dir`.
+  m.def(
+      "steered_gain_dbi",
+      [](const rf::AntennaArray& arr, py::object beam, py::object dir) {
+        return rf::steeredGainDbi(arr, toVec3(beam), toVec3(dir));
+      },
+      py::arg("array"), py::arg("beam_dir"), py::arg("direction"));
 }
 
 void bindGeometry(py::module_& m) {
@@ -245,6 +282,11 @@ void bindSceneTypes(py::module_& m) {
       .def_readwrite("frequency_hz", &Transmitter::frequencyHz)
       .def_readwrite("power_dbm", &Transmitter::powerDbm)
       .def_readwrite("antenna", &Transmitter::antenna)
+      .def_readwrite("array", &Transmitter::array)
+      .def_property(
+          "beam_steering",
+          [](const Transmitter& t) { return vec3ToArray(t.beamSteering); },
+          [](Transmitter& t, const py::handle& v) { t.beamSteering = toVec3(v); })
       .def_readwrite("polarization", &Transmitter::polarization);
 
   py::class_<Receiver>(m, "Receiver")
@@ -267,6 +309,11 @@ void bindSceneTypes(py::module_& m) {
           [](const Receiver& r) { return vec3ToArray(r.position); },
           [](Receiver& r, const py::handle& v) { r.position = toVec3(v); })
       .def_readwrite("antenna", &Receiver::antenna)
+      .def_readwrite("array", &Receiver::array)
+      .def_property(
+          "beam_steering",
+          [](const Receiver& r) { return vec3ToArray(r.beamSteering); },
+          [](Receiver& r, const py::handle& v) { r.beamSteering = toVec3(v); })
       .def_readwrite("polarization", &Receiver::polarization);
 }
 
