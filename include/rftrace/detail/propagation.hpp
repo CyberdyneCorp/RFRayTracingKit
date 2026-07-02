@@ -198,7 +198,8 @@ inline double extraPropagationLossDb(const PropagationContext& ctx,
 /// folded into the budget (zero in this foundation, so behavior is unchanged).
 inline void finishPath(RFPath& path, const Transmitter& tx, const Receiver& rx,
                        double reflectionLossDb,
-                       const PropagationContext* ctx = nullptr) {
+                       const PropagationContext* ctx = nullptr,
+                       const rf::Jones* incidentJones = nullptr) {
   const auto& pts = path.points;
   const double len = pathLength(pts);
   const double fspl = rf::freeSpacePathLossDb(len, tx.frequencyHz);
@@ -228,7 +229,9 @@ inline void finishPath(RFPath& path, const Transmitter& tx, const Receiver& rx,
   // transmitter's (co-polar); the mismatch against the receiver antenna is
   // added to the budget. With the default Vertical/Vertical (or `None`) states
   // this is exactly 0 dB, leaving the archived budget bit-for-bit unchanged.
-  path.polarization = rf::jonesFor(tx.polarization);
+  // Reflected paths pass the depolarized arriving Jones state (accumulated
+  // through the bounces); other paths default to the transmitter's polarization.
+  path.polarization = incidentJones ? *incidentJones : rf::jonesFor(tx.polarization);
   const double polMismatchDb =
       (tx.polarization == Polarization::None ||
        rx.polarization == Polarization::None)

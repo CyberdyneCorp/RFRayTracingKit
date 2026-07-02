@@ -15,6 +15,7 @@
 #include "rftrace/rf/diffraction_multi.hpp"
 #include "rftrace/rf/doppler.hpp"
 #include "rftrace/rf/reflection.hpp"
+#include "rftrace/rf/utd.hpp"
 
 namespace rftrace {
 namespace detail {
@@ -85,14 +86,30 @@ bool buildReflection(const Scene& scene, const IBackend& backend,
   }
 
   double reflLoss = 0.0;
+  // Track the polarization state through the bounces (depolarization): each
+  // reflection applies its complex TE/TM Fresnel coefficients to the Jones
+  // vector, so unequal TE/TM (or phase) rotates linear pol / makes it elliptical.
+  // Amplitude loss stays in reflLoss; the mismatch normalizes magnitude, so this
+  // affects only the polarization-mismatch term, not double-counted attenuation.
+  rf::Jones jones = rf::jonesFor(tx.polarization);
   out.materialHits.clear();
   for (int i = 0; i < k; ++i) {
     const Triangle& tri = tris[seq[i]];
     const Material& mat = scene.materialForTriangle(seq[i]);
     const Vec3 inDir = (out.points[i + 1] - out.points[i]).normalized();
     const double cosI = std::clamp(std::abs(inDir.dot(tri.normal())), 0.0, 1.0);
-    reflLoss += rf::reflectionLossDb(mat, std::acos(cosI), tx.polarization,
+    const double incidence = std::acos(cosI);
+    reflLoss += rf::reflectionLossDb(mat, incidence, tx.polarization,
                                      tx.frequencyHz);
+    if (ctx && ctx->settings.enableDepolarization && mat.hasElectricalParameters()) {
+      const rf::Complex epsc = rf::complexPermittivity(
+          mat.relativePermittivity, mat.conductivity, tx.frequencyHz);
+      const rf::Complex te = rf::fresnelReflectionCoefficient(
+          epsc, incidence, rf::FresnelPolarization::TE);
+      const rf::Complex tm = rf::fresnelReflectionCoefficient(
+          epsc, incidence, rf::FresnelPolarization::TM);
+      jones = rf::reflectDepolarize(jones, te, tm);
+    }
     out.materialHits.push_back(mat.name);
   }
 
@@ -100,7 +117,7 @@ bool buildReflection(const Scene& scene, const IBackend& backend,
   out.receiverId = rx.id;
   out.type = PathType::Reflection;
   out.reflections = k;
-  finishPath(out, tx, rx, reflLoss, ctx);
+  finishPath(out, tx, rx, reflLoss, ctx, &jones);
   return true;
 }
 
@@ -257,6 +274,9 @@ double diffractionLossDb(const IBackend& backend, const Vec3& tx, const Vec3& rx
   const double single = rf::knifeEdgeLossDb(v);
   if (!ctx || ctx->settings.diffractionModel == DiffractionModel::SingleEdge)
     return single;
+  // UTD: single dominant edge as a conducting half-plane (uses the same v).
+  if (ctx->settings.diffractionModel == DiffractionModel::UTD)
+    return rf::utdDiffractionLossDb(v);
   const rf::TerrainProfile prof = buildTerrainProfile(backend, tx, rx);
   if (prof.obstacles.empty()) return single;
   return ctx->settings.diffractionModel == DiffractionModel::Bullington

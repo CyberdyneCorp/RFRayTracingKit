@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-02
+goal: Wire the already-validated UTD coefficient and Jones depolarization
+  primitives into the simulation path
