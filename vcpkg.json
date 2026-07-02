@@ -1,0 +1,16 @@
+{
+  "name": "rftracekit",
+  "version": "0.1.0",
+  "description": "Modern C++ ray tracing and RF propagation library (CPU reference)",
+  "dependencies": [
+    "eigen3",
+    "assimp",
+    "nlohmann-json"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build the test suite",
+      "dependencies": ["gtest"]
+    }
+  }
+}
