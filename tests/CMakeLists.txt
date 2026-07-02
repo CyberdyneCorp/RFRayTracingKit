@@ -35,10 +35,13 @@ add_executable(rftrace_tests
   test_coverage_multipath.cpp
   test_geojson.cpp
   test_geo_import.cpp
+  test_osm_xml.cpp
+  test_osm_pbf.cpp
   test_geotiff.cpp
   test_gltf.cpp
   test_czml.cpp
   test_tiles3d.cpp
+  test_tiles3d_lod.cpp
   test_parquet.cpp
   test_phase2_golden.cpp
   test_phase7_regression.cpp
@@ -82,6 +85,31 @@ if(RFTRACE_ENABLE_PARQUET)
   find_package(Parquet CONFIG REQUIRED)
   target_link_libraries(rftrace_tests PRIVATE
     Arrow::arrow_shared Parquet::parquet_shared)
+endif()
+
+# test_osm_pbf.cpp uses libosmium directly (to author a synthetic .osm.pbf with
+# osmium's writer and read it back). RFTRACE_HAVE_OSMIUM propagates from
+# rftrace's PUBLIC compile definition; the test target still needs osmium's
+# header paths and the codec libraries the PBF I/O links against.
+if(RFTRACE_ENABLE_OSMIUM)
+  find_path(OSMIUM_INCLUDE_DIR osmium/io/pbf_input.hpp
+    HINTS /opt/homebrew/include /usr/local/include)
+  find_path(PROTOZERO_INCLUDE_DIR protozero/version.hpp
+    HINTS /opt/homebrew/include /usr/local/include)
+  find_library(OSMIUM_EXPAT_LIB NAMES expat
+    HINTS /opt/homebrew/opt/expat/lib /usr/local/opt/expat/lib)
+  find_library(OSMIUM_LZ4_LIB NAMES lz4
+    HINTS /opt/homebrew/opt/lz4/lib /usr/local/opt/lz4/lib)
+  find_library(OSMIUM_ZLIB_LIB NAMES z)
+  find_library(OSMIUM_BZ2_LIB NAMES bz2)
+  target_include_directories(rftrace_tests PRIVATE
+    ${OSMIUM_INCLUDE_DIR} ${PROTOZERO_INCLUDE_DIR})
+  foreach(lib IN ITEMS
+      ${OSMIUM_EXPAT_LIB} ${OSMIUM_LZ4_LIB} ${OSMIUM_ZLIB_LIB} ${OSMIUM_BZ2_LIB})
+    if(lib)
+      target_link_libraries(rftrace_tests PRIVATE ${lib})
+    endif()
+  endforeach()
 endif()
 
 include(GoogleTest)

@@ -19,6 +19,7 @@ option(RFTRACE_ENABLE_OPENCL  "Enable the OpenCL backend"     OFF)
 option(RFTRACE_ENABLE_EMBREE  "Enable the optional Embree CPU backend" OFF)
 option(RFTRACE_ENABLE_GDAL    "Enable GDAL-backed GeoTIFF/DEM import & export" OFF)
 option(RFTRACE_ENABLE_PARQUET "Enable Apache Arrow/Parquet result export" OFF)
+option(RFTRACE_ENABLE_OSMIUM  "Enable OSM PBF import via libosmium" OFF)
 
 # ---- Dependencies ------------------------------------------------------------
 # Resolved via vcpkg (toolchain file) or a system package manager (e.g. Homebrew)
@@ -44,6 +45,8 @@ add_library(rftrace
   src/importers/geojson_importer.cpp
   src/importers/cityjson_importer.cpp
   src/importers/osm_importer.cpp
+  src/importers/osm_extract.cpp
+  src/importers/osm_pbf_importer.cpp
   src/importers/geotiff_terrain.cpp
   src/exporters/json_exporter.cpp
   src/exporters/csv_exporter.cpp
@@ -94,6 +97,47 @@ if(RFTRACE_ENABLE_PARQUET)
   find_package(Parquet CONFIG REQUIRED)
   target_link_libraries(rftrace PRIVATE Arrow::arrow_shared Parquet::parquet_shared)
   target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_PARQUET=1)
+endif()
+
+# ---- libosmium (OSM PBF import) ----------------------------------------------
+# Optional. src/importers/osm_pbf_importer.cpp is always compiled, but its
+# osmium-backed body is guarded by RFTRACE_HAVE_OSMIUM. When OFF the entry point
+# still throws a clear "built without OSM PBF (osmium)" error and
+# osmiumAvailable() reports false. libosmium and protozero are header-only, so
+# this only adds include paths plus the codec libraries osmium's PBF reader
+# needs (zlib for the standard PBF compression; expat/bzip2/lz4 for the wider
+# osmium I/O surface). RFTRACE_HAVE_OSMIUM is PUBLIC so guarded headers/tests
+# key off it.
+if(RFTRACE_ENABLE_OSMIUM)
+  find_path(OSMIUM_INCLUDE_DIR osmium/io/pbf_input.hpp
+    HINTS /opt/homebrew/include /usr/local/include)
+  find_path(PROTOZERO_INCLUDE_DIR protozero/version.hpp
+    HINTS /opt/homebrew/include /usr/local/include)
+  if(NOT OSMIUM_INCLUDE_DIR OR NOT PROTOZERO_INCLUDE_DIR)
+    message(FATAL_ERROR
+      "RFTRACE_ENABLE_OSMIUM=ON requires libosmium (osmium/io/pbf_input.hpp) and "
+      "protozero (protozero/version.hpp) headers, which were not found. Install "
+      "them (e.g. `brew install libosmium protozero`).")
+  endif()
+
+  # Codec libraries osmium's I/O layer links against. zlib and bzip2 ship with
+  # the platform SDK on macOS (linked by name); expat and lz4 come from Homebrew.
+  find_library(OSMIUM_EXPAT_LIB NAMES expat
+    HINTS /opt/homebrew/opt/expat/lib /usr/local/opt/expat/lib)
+  find_library(OSMIUM_LZ4_LIB NAMES lz4
+    HINTS /opt/homebrew/opt/lz4/lib /usr/local/opt/lz4/lib)
+  find_library(OSMIUM_ZLIB_LIB NAMES z)
+  find_library(OSMIUM_BZ2_LIB NAMES bz2)
+
+  target_include_directories(rftrace PRIVATE
+    ${OSMIUM_INCLUDE_DIR} ${PROTOZERO_INCLUDE_DIR})
+  foreach(lib IN ITEMS
+      ${OSMIUM_EXPAT_LIB} ${OSMIUM_LZ4_LIB} ${OSMIUM_ZLIB_LIB} ${OSMIUM_BZ2_LIB})
+    if(lib)
+      target_link_libraries(rftrace PRIVATE ${lib})
+    endif()
+  endforeach()
+  target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_OSMIUM=1)
 endif()
 
 # ---- Metal GPU backend (Apple only) -----------------------------------------

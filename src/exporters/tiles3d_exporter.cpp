@@ -2,11 +2,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "rftrace/exporters/gltf_exporter.hpp"
@@ -129,6 +133,116 @@ Bounds computeBounds(const RFResult& result) {
   }
   return b;
 }
+
+// --- Hierarchical LOD helpers (D5) -----------------------------------------
+
+/// Horizontal (X/Y) cell of a quadtree node. The vertical (Z) extent is shared
+/// across all tiles (the scene's global Z range), so child boxes always nest
+/// inside their parent's box.
+struct HCell {
+  double xlo, xhi, ylo, yhi;
+};
+
+/// Sub-result holding only the receivers (with their full ray paths) whose
+/// horizontal position falls inside `cell`. Ownership is by receiver position;
+/// a receiver's paths are carried whole even if they reach outside the cell.
+RFResult filterByCell(const RFResult& result, const HCell& cell) {
+  RFResult out;
+  out.simulationId = result.simulationId;
+  out.frequencyHz = result.frequencyHz;
+  out.transmitters = result.transmitters;
+  for (const auto& rx : result.receivers) {
+    const double x = rx.position.x();
+    const double y = rx.position.y();
+    if (x >= cell.xlo && x <= cell.xhi && y >= cell.ylo && y <= cell.yhi)
+      out.receivers.push_back(rx);
+  }
+  return out;
+}
+
+/// True if the glTF writer would emit at least one primitive for `subset`
+/// (a polyline path with >= 2 points, or a receiver point when included).
+bool hasRenderable(const RFResult& subset, bool includeReceivers) {
+  for (const auto& rx : subset.receivers)
+    for (const auto& p : rx.paths)
+      if (p.points.size() >= 2) return true;
+  return includeReceivers && !subset.receivers.empty();
+}
+
+/// 3D Tiles 1.1 `box`: [center(3), x-halfaxis(3), y-halfaxis(3), z-halfaxis(3)].
+/// A tiny floor on each half-axis keeps degenerate (flat) cells valid.
+json cellBox(const HCell& cell, double zlo, double zhi) {
+  constexpr double kEps = 1e-6;
+  const double cx = 0.5 * (cell.xlo + cell.xhi);
+  const double cy = 0.5 * (cell.ylo + cell.yhi);
+  const double cz = 0.5 * (zlo + zhi);
+  const double hx = std::max(0.5 * (cell.xhi - cell.xlo), kEps);
+  const double hy = std::max(0.5 * (cell.yhi - cell.ylo), kEps);
+  const double hz = std::max(0.5 * (zhi - zlo), kEps);
+  return json::array({cx, cy, cz, hx, 0.0, 0.0, 0.0, hy, 0.0, 0.0, 0.0, hz});
+}
+
+void writeGlbFile(const RFResult& subset, const std::filesystem::path& glbPath,
+                  bool includeReceivers) {
+  const std::vector<std::uint8_t> glb =
+      gltfJsonToGlb(pathsToGltfString(subset, includeReceivers));
+  std::ofstream out(glbPath, std::ios::binary);
+  if (!out)
+    throw std::runtime_error("cannot write GLB to '" + glbPath.string() + "'");
+  out.write(reinterpret_cast<const char*>(glb.data()),
+            static_cast<std::streamsize>(glb.size()));
+}
+
+/// The four horizontal quadrants of `cell`, split at its midpoint.
+std::array<HCell, 4> quadrants(const HCell& cell) {
+  const double mx = 0.5 * (cell.xlo + cell.xhi);
+  const double my = 0.5 * (cell.ylo + cell.yhi);
+  return {HCell{cell.xlo, mx, cell.ylo, my}, HCell{mx, cell.xhi, cell.ylo, my},
+          HCell{cell.xlo, mx, my, cell.yhi}, HCell{mx, cell.xhi, my, cell.yhi}};
+}
+
+/// Shared state for one LOD export, threaded through the recursion.
+struct LodContext {
+  std::filesystem::path dir;
+  double zlo, zhi;
+  double baseError;
+  int maxDepth;
+  bool includeReceivers;
+};
+
+/// Recursively build one tile (and its subtree). Returns std::nullopt when the
+/// tile and all of its descendants are empty (so empty quadrants are dropped).
+/// `key` uniquely names this tile's content file (e.g. "r", "r0", "r03").
+std::optional<json> buildLodTile(const RFResult& result, const LodContext& ctx,
+                                 const HCell& cell, int depth,
+                                 const std::string& key) {
+  const RFResult subset = filterByCell(result, cell);
+  const bool ownContent = hasRenderable(subset, ctx.includeReceivers);
+
+  json children = json::array();
+  if (depth < ctx.maxDepth) {
+    const std::array<HCell, 4> quads = quadrants(cell);
+    for (int i = 0; i < 4; ++i) {
+      std::optional<json> child = buildLodTile(
+          result, ctx, quads[i], depth + 1, key + std::to_string(i));
+      if (child) children.push_back(std::move(*child));
+    }
+  }
+
+  if (!ownContent && children.empty()) return std::nullopt;
+
+  json tile;
+  tile["boundingVolume"] = {{"box", cellBox(cell, ctx.zlo, ctx.zhi)}};
+  tile["geometricError"] = ctx.baseError / static_cast<double>(1 << depth);
+  tile["refine"] = "REPLACE";
+  if (ownContent) {
+    const std::string name = "content_" + key + ".glb";
+    writeGlbFile(subset, ctx.dir / name, ctx.includeReceivers);
+    tile["content"] = {{"uri", name}};
+  }
+  if (!children.empty()) tile["children"] = std::move(children);
+  return tile;
+}
 }  // namespace
 
 void exportPaths3DTiles(const RFResult& result, const std::string& outputDir,
@@ -171,6 +285,46 @@ void exportPaths3DTiles(const RFResult& result, const std::string& outputDir,
       {"refine", "ADD"},
       {"content", {{"uri", contentName}}}};
 
+  std::ofstream out(tilesetPath);
+  if (!out)
+    throw std::runtime_error("cannot write tileset to '" + tilesetPath.string() + "'");
+  out << tileset.dump(2);
+}
+
+void exportPaths3DTilesLod(const RFResult& result, const std::string& outputDir,
+                           int maxDepth, bool includeReceivers) {
+  namespace fs = std::filesystem;
+  fs::create_directories(outputDir);
+
+  const Bounds b = computeBounds(result);
+  const HCell rootCell{b.lo.x(), b.hi.x(), b.lo.y(), b.hi.y()};
+  const double diagonal = (b.hi - b.lo).norm();
+
+  LodContext ctx;
+  ctx.dir = outputDir;
+  ctx.zlo = b.lo.z();
+  ctx.zhi = b.hi.z();
+  // Non-zero base error so every level (including leaves) stays positive and
+  // each parent strictly exceeds its children (baseError / 2^depth).
+  ctx.baseError = diagonal > 0.0 ? diagonal : 1.0;
+  ctx.maxDepth = std::max(1, maxDepth);
+  ctx.includeReceivers = includeReceivers;
+
+  std::optional<json> root =
+      buildLodTile(result, ctx, rootCell, /*depth=*/0, /*key=*/"r");
+  if (!root) {
+    // Empty scene: emit a valid, content-free root over the (unit) extent.
+    root = json{{"boundingVolume", {{"box", cellBox(rootCell, ctx.zlo, ctx.zhi)}}},
+                {"geometricError", 0.0},
+                {"refine", "REPLACE"}};
+  }
+
+  json tileset;
+  tileset["asset"] = {{"version", "1.1"}, {"generator", "RFTraceKit"}};
+  tileset["geometricError"] = ctx.baseError;
+  tileset["root"] = std::move(*root);
+
+  const fs::path tilesetPath = fs::path(outputDir) / "tileset.json";
   std::ofstream out(tilesetPath);
   if (!out)
     throw std::runtime_error("cannot write tileset to '" + tilesetPath.string() + "'");

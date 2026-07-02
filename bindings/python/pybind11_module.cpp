@@ -5,6 +5,8 @@
 // Python lists/tuples anywhere a Vec3 is expected, and returns geometry buffers
 // as NumPy arrays. Higher-level ergonomics live in the pure-Python package.
 
+#include <pybind11/complex.h>
+#include <pybind11/eigen.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -16,6 +18,20 @@
 #include <vector>
 
 #include "rftrace/rftrace.hpp"
+
+// New geospatial IO surface (D1). Scene::load* / geoProject live in scene.hpp
+// (already pulled in by rftrace.hpp); these headers add the MSI importer, the
+// CZML / 3D-Tiles exporters, and the GDAL/Parquet-gated exporters.
+#include "rftrace/exporters/csv_exporter.hpp"
+#include "rftrace/exporters/czml_exporter.hpp"
+#include "rftrace/exporters/geotiff_heatmap.hpp"
+#include "rftrace/exporters/json_exporter.hpp"
+#include "rftrace/exporters/parquet_exporter.hpp"
+#include "rftrace/exporters/tiles3d_exporter.hpp"
+#include "rftrace/importers/geotiff_terrain.hpp"
+#include "rftrace/importers/msi_importer.hpp"
+#include "rftrace/rf/mimo.hpp"
+#include "rftrace/route.hpp"
 
 namespace py = pybind11;
 using namespace rftrace;
@@ -101,6 +117,18 @@ PropagationMode modeFromObject(const py::handle& obj) {
   }
   return obj.cast<PropagationMode>();
 }
+
+#if RFTRACE_HAVE_GDAL
+/// Parse a coverage-metric string ("power" / "path_loss" / "sinr").
+io::CoverageMetric metricFromString(const std::string& name) {
+  const std::string s = toLower(name);
+  if (s == "power" || s == "power_dbm") return io::CoverageMetric::PowerDbm;
+  if (s == "path_loss" || s == "pathloss" || s == "path_loss_db")
+    return io::CoverageMetric::PathLossDb;
+  if (s == "sinr" || s == "sinr_db") return io::CoverageMetric::SinrDb;
+  throw std::invalid_argument("unknown coverage metric: " + name);
+}
+#endif
 
 // ---- Binding sections -------------------------------------------------------
 
@@ -356,7 +384,40 @@ void bindScene(py::module_& m) {
       .def(
           "coordinate_system",
           [](Scene& s) -> CoordinateSystem& { return s.coordinateSystem(); },
-          py::return_value_policy::reference_internal);
+          py::return_value_policy::reference_internal)
+      // --- Georeferencing + geospatial importers (D1) ---------------------
+      .def("set_geo_origin", &Scene::setGeoOrigin, py::arg("lat_deg"),
+           py::arg("lon_deg"))
+      .def("has_geo_origin", &Scene::hasGeoOrigin)
+      .def(
+          "geo_project",
+          [](const Scene& s, double latDeg, double lonDeg, double altMeters) {
+            return vec3ToArray(s.geoProject(latDeg, lonDeg, altMeters));
+          },
+          py::arg("lat_deg"), py::arg("lon_deg"), py::arg("alt_meters") = 0.0)
+      .def("load_geojson", &Scene::loadGeoJSON, py::arg("path"),
+           py::arg("building_material") = "concrete",
+           py::arg("point_type") = "receiver")
+      .def("load_cityjson", &Scene::loadCityJSON, py::arg("path"),
+           py::arg("building_material") = "concrete")
+      .def("load_osm", &Scene::loadOSM, py::arg("path"),
+           py::arg("building_material") = "concrete",
+           py::arg("vegetation_material") = "vegetation")
+#if RFTRACE_HAVE_GDAL
+      // GDAL-gated: absent from the extension when built without GDAL.
+      .def(
+          "load_terrain",
+          [](Scene& s, const std::string& path,
+             const std::string& terrainMaterial, bool offsetBuildingBases) {
+            io::TerrainImportOptions opts;
+            opts.terrainMaterial = terrainMaterial;
+            opts.offsetBuildingBases = offsetBuildingBases;
+            return s.loadTerrain(path, opts);
+          },
+          py::arg("path"), py::arg("terrain_material") = "soil",
+          py::arg("offset_building_bases") = false)
+#endif
+      ;
 }
 
 void bindSettings(py::module_& m) {
@@ -483,6 +544,93 @@ void bindResults(py::module_& m) {
           py::arg("id"));
 }
 
+void bindRoute(py::module_& m) {
+  // A drive-test route: an ordered polyline sampled by arc length (D2/D6).
+  py::class_<Route>(m, "Route")
+      .def(py::init([](const py::handle& waypoints, double sampleSpacing,
+                       double speedMps, const std::string& id,
+                       const AntennaPattern& antenna, Polarization pol) {
+             Route r;
+             r.id = id;
+             r.sampleSpacing = sampleSpacing;
+             r.speedMps = speedMps;
+             r.antenna = antenna;
+             r.polarization = pol;
+             for (const auto& wp : waypoints) r.waypoints.push_back(toVec3(wp));
+             return r;
+           }),
+           py::arg("waypoints"), py::arg("sample_spacing") = 1.0,
+           py::arg("speed_mps") = 0.0, py::arg("id") = "route",
+           py::arg("antenna") = AntennaPattern::Omnidirectional(),
+           py::arg("polarization") = Polarization::Vertical)
+      .def_readwrite("id", &Route::id)
+      .def_readwrite("sample_spacing", &Route::sampleSpacing)
+      .def_readwrite("speed_mps", &Route::speedMps)
+      .def_readwrite("antenna", &Route::antenna)
+      .def_readwrite("polarization", &Route::polarization)
+      .def_property(
+          "waypoints",
+          [](const Route& r) { return pointsToArray(r.waypoints); },
+          [](Route& r, const py::handle& wps) {
+            r.waypoints.clear();
+            for (const auto& wp : wps) r.waypoints.push_back(toVec3(wp));
+          })
+      .def("sample_positions", [](const Route& r) {
+        std::vector<Vec3> pts;
+        for (const auto& sp : r.sample()) pts.push_back(sp.position);
+        return pointsToArray(pts);
+      });
+
+  // One sampled position along a route with its per-sample RF metrics.
+  py::class_<RouteSample>(m, "RouteSample")
+      .def(py::init<>())
+      .def_readonly("index", &RouteSample::index)
+      .def_readonly("distance_meters", &RouteSample::distanceMeters)
+      .def_property_readonly(
+          "position",
+          [](const RouteSample& s) { return vec3ToArray(s.position); })
+      .def_readonly("has_signal", &RouteSample::hasSignal)
+      .def_readonly("received_power_dbm", &RouteSample::receivedPowerDbm)
+      .def_readonly("path_loss_db", &RouteSample::pathLossDb)
+      .def_readonly("delay_spread_ns", &RouteSample::delaySpreadNs)
+      .def_readonly("doppler_hz", &RouteSample::dopplerHz)
+      .def_readonly("serving_transmitter_id", &RouteSample::servingTransmitterId)
+      .def_readonly("sinr_db", &RouteSample::sinrDb)
+      .def_readonly("interference_power_dbm",
+                    &RouteSample::interferencePowerDbm);
+
+  py::class_<RouteResult>(m, "RouteResult")
+      .def(py::init<>())
+      .def_readonly("route_id", &RouteResult::routeId)
+      .def_readonly("simulation_id", &RouteResult::simulationId)
+      .def_readonly("frequency_hz", &RouteResult::frequencyHz)
+      .def_readonly("samples", &RouteResult::samples);
+}
+
+void bindMimo(py::module_& m) {
+  py::module_ mimo =
+      m.def_submodule("mimo", "Narrowband MIMO channel matrix + capacity (R4).");
+
+  // H (n_rx × n_tx, complex) from a receiver's propagation paths + array geoms.
+  mimo.def(
+      "channel_matrix",
+      [](const ReceiverResult& rx, const rf::AntennaArray& txArray,
+         const rf::AntennaArray& rxArray) -> Eigen::MatrixXcd {
+        return rf::channelMatrix(rx, txArray, rxArray);
+      },
+      py::arg("receiver_result"), py::arg("tx_array"), py::arg("rx_array"));
+
+  mimo.def("capacity", &rf::capacity, py::arg("channel"),
+           py::arg("snr_linear"));
+
+  mimo.def(
+      "per_stream_sinr",
+      [](const Eigen::MatrixXcd& h, double snrLinear) {
+        return toArray1d(rf::perStreamSinr(h, snrLinear));
+      },
+      py::arg("channel"), py::arg("snr_linear"));
+}
+
 void bindCoverage(py::module_& m) {
   py::class_<CoverageGrid>(m, "CoverageGrid")
       .def(py::init([](const py::handle& origin, double cellSize, int cols,
@@ -543,7 +691,10 @@ void bindSimulator(py::module_& m) {
       .def("run", &Simulator::run, py::arg("scene"),
            py::call_guard<py::gil_scoped_release>())
       .def("run_coverage", &Simulator::runCoverage, py::arg("scene"),
-           py::arg("grid"), py::call_guard<py::gil_scoped_release>());
+           py::arg("grid"), py::call_guard<py::gil_scoped_release>())
+      // Drive-test route: pure-C++ compute; release the GIL like run/run_coverage.
+      .def("run_route", &Simulator::runRoute, py::arg("scene"), py::arg("route"),
+           py::call_guard<py::gil_scoped_release>());
 }
 
 void bindExporters(py::module_& m) {
@@ -584,11 +735,92 @@ void bindExporters(py::module_& m) {
   io.def("export_coverage_geojson", &io::exportCoverageGeoJson,
          py::arg("coverage"), py::arg("path"));
 
+  // Route (drive-test) result — JSON + CSV.
+  io.def("route_to_json_string", &io::routeToJsonString, py::arg("route"));
+  io.def("export_route_json", &io::exportRouteJson, py::arg("route"),
+         py::arg("path"));
+  io.def("route_to_csv_string", &io::routeToCsvString, py::arg("route"));
+  io.def("export_route_csv", &io::exportRouteCsv, py::arg("route"),
+         py::arg("path"));
+
+  // MIMO channel matrix -> JSON (dimensions, real/imag, capacity at SNR).
+  io.def("mimo_to_json_string", &io::mimoToJsonString, py::arg("channel"),
+         py::arg("snr_linear"));
+  io.def("export_mimo_json", &io::exportMimoJson, py::arg("channel"),
+         py::arg("snr_linear"), py::arg("path"));
+
   // glTF
   io.def("paths_to_gltf_string", &io::pathsToGltfString, py::arg("result"),
          py::arg("include_receivers") = true);
   io.def("export_paths_gltf", &io::exportPathsGltf, py::arg("result"),
          py::arg("path"), py::arg("include_receivers") = true);
+
+  // CZML (Cesium) — cartesian local, or cartographic-degrees when the scene is
+  // georeferenced (scene overload).
+  io.def(
+      "result_to_czml_string",
+      [](const RFResult& r) { return io::resultToCzmlString(r); },
+      py::arg("result"));
+  io.def(
+      "result_to_czml_string",
+      [](const RFResult& r, const Scene& s) {
+        return io::resultToCzmlString(r, s);
+      },
+      py::arg("result"), py::arg("scene"));
+  io.def(
+      "export_result_czml",
+      [](const RFResult& r, const std::string& path) {
+        io::exportResultCzml(r, path);
+      },
+      py::arg("result"), py::arg("path"));
+  io.def(
+      "export_result_czml",
+      [](const RFResult& r, const std::string& path, const Scene& s) {
+        io::exportResultCzml(r, path, s);
+      },
+      py::arg("result"), py::arg("path"), py::arg("scene"));
+
+  // 3D Tiles (single-tile tileset.json + content.glb into a directory).
+  io.def("export_paths_3dtiles", &io::exportPaths3DTiles, py::arg("result"),
+         py::arg("directory"), py::arg("include_receivers") = true);
+
+#if RFTRACE_HAVE_GDAL
+  // GDAL-gated coverage -> GeoTIFF heatmap.
+  io.def(
+      "export_coverage_geotiff",
+      [](const CoverageResult& c, const std::string& path,
+         const std::string& metric, double originLat, double originLon,
+         bool georeferenced) {
+        io::GeoTiffHeatmapOptions opts;
+        opts.metric = metricFromString(metric);
+        opts.originLat = originLat;
+        opts.originLon = originLon;
+        opts.georeferenced = georeferenced;
+        io::exportCoverageGeoTiff(c, path, opts);
+      },
+      py::arg("coverage"), py::arg("path"), py::arg("metric") = "power",
+      py::arg("origin_lat") = 0.0, py::arg("origin_lon") = 0.0,
+      py::arg("georeferenced") = false);
+#endif
+
+#if RFTRACE_HAVE_PARQUET
+  // Parquet-gated per-receiver table export.
+  io.def("receivers_to_parquet", &io::exportReceiversParquet,
+         py::arg("result"), py::arg("path"));
+  io.def("export_receivers_parquet", &io::exportReceiversParquet,
+         py::arg("result"), py::arg("path"));
+#endif
+}
+
+void bindGeoIO(py::module_& m) {
+  // MSI/Planet antenna-pattern importer (always-on).
+  m.def("load_msi_antenna", &io::loadMsiAntenna, py::arg("path"));
+
+  // Build-capability probes (always defined; reflect the compiled extension).
+  m.def("gdal_available", &io::gdalAvailable,
+        "True when the extension was built with GDAL (GeoTIFF DEM/heatmap).");
+  m.def("parquet_available", &io::parquetAvailable,
+        "True when the extension was built with Apache Arrow/Parquet.");
 }
 
 }  // namespace
@@ -605,7 +837,10 @@ PYBIND11_MODULE(_native, m) {
   bindScene(m);
   bindSettings(m);
   bindResults(m);
+  bindRoute(m);
+  bindMimo(m);
   bindCoverage(m);
   bindSimulator(m);
   bindExporters(m);
+  bindGeoIO(m);
 }

@@ -131,13 +131,28 @@ class Scene {
   /// georeference. Returns the number of triangles added.
   std::size_t loadCityJSON(const std::string& path,
                            const std::string& buildingMaterial = "concrete");
-  /// Import an Overpass (OSM) JSON document: `building` ways become extruded
-  /// buildings and `natural=wood`/`landuse=forest`/`leisure=park` areas become
-  /// vegetation. Node coordinates are resolved and projected through the
-  /// georeference. Returns the number of triangles added.
+  /// Import an OpenStreetMap document, autodetecting the Overpass JSON and
+  /// `.osm` XML formats by content: `building` ways become extruded buildings
+  /// and `natural=wood`/`landuse=forest`/`leisure=park` areas become vegetation.
+  /// Node coordinates are resolved and projected through the georeference.
+  /// Returns the number of triangles added.
   std::size_t loadOSM(const std::string& path,
                       const std::string& buildingMaterial = "concrete",
                       const std::string& vegetationMaterial = "vegetation");
+  /// Import an OpenStreetMap `.osm` XML document via the in-tree XML reader,
+  /// applying the same building/vegetation extraction as `loadOSM`. Returns the
+  /// number of triangles added.
+  std::size_t loadOSMXml(const std::string& path,
+                         const std::string& buildingMaterial = "concrete",
+                         const std::string& vegetationMaterial = "vegetation");
+  /// Import an OpenStreetMap `.osm.pbf` binary document via libosmium, applying
+  /// the same building/vegetation extraction as `loadOSM`. Returns the number of
+  /// triangles added. Throws SceneError on failure, or a runtime error when the
+  /// library was built without osmium (`RFTRACE_ENABLE_OSMIUM=OFF`); query
+  /// `io::osmiumAvailable()` to detect support.
+  std::size_t loadOSMPbf(const std::string& path,
+                         const std::string& buildingMaterial = "concrete",
+                         const std::string& vegetationMaterial = "vegetation");
   /// Load a single-band GeoTIFF DEM (GDAL) as a triangulated terrain surface
   /// assigned `opts.terrainMaterial` ("soil"). Sets the scene georeference to the
   /// DEM centroid when unset, stores the imported terrain (see `terrain()`), and
