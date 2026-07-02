@@ -3,6 +3,10 @@
 #include "rftrace/backend.hpp"
 #include "rftrace/bvh.hpp"
 
+#if RFTRACE_HAVE_METAL
+#include "rftrace/backends/metal_backend.hpp"
+#endif
+
 namespace rftrace {
 
 namespace {
@@ -23,6 +27,22 @@ class CpuBackend final : public IBackend {
 };
 
 }  // namespace
+
+// Default batched implementations: loop over the single-ray queries. Backends
+// that can dispatch a whole batch at once (Metal) override these.
+std::vector<Hit> IBackend::closestHitBatch(const std::vector<Ray>& rays) const {
+  std::vector<Hit> hits;
+  hits.reserve(rays.size());
+  for (const Ray& ray : rays) hits.push_back(closestHit(ray));
+  return hits;
+}
+
+std::vector<char> IBackend::occludedBatch(const std::vector<Ray>& rays) const {
+  std::vector<char> flags;
+  flags.reserve(rays.size());
+  for (const Ray& ray : rays) flags.push_back(occluded(ray) ? 1 : 0);
+  return flags;
+}
 
 std::string toString(Backend backend) {
   switch (backend) {
@@ -54,18 +74,35 @@ bool backendAvailable(Backend backend) {
       return false;
 #endif
     case Backend::Metal:
+#if RFTRACE_HAVE_METAL
+      return metalDeviceAvailable();
+#else
+      return false;
+#endif
     case Backend::CUDA:
     case Backend::OpenCL:
-      return false;  // not compiled in Phase 1
+      return false;  // not compiled in this build
   }
   return false;
 }
 
 std::unique_ptr<IBackend> makeBackend(Backend backend, bool allowFallback) {
-  // Phase 1 ships only the CPU traversal implementation. Embree, when enabled,
-  // is validated against it in a later task; until then it maps to CPU too.
+  // The CPU traversal implementation is the reference. Embree, when enabled, is
+  // validated against it in a later task; until then it maps to CPU too.
   if (backend == Backend::CPU || backend == Backend::Embree)
     return std::make_unique<CpuBackend>();
+
+#if RFTRACE_HAVE_METAL
+  if (backend == Backend::Metal && metalDeviceAvailable()) {
+    try {
+      return makeMetalBackend();
+    } catch (const std::exception&) {
+      // Runtime kernel/AS build failure: treat the backend as unavailable and
+      // fall back to CPU when permitted, rather than propagating.
+      if (!allowFallback) throw;
+    }
+  }
+#endif
 
   if (allowFallback) return std::make_unique<CpuBackend>();
   throw std::runtime_error("backend '" + toString(backend) +

@@ -59,6 +59,21 @@ if(RFTRACE_ENABLE_EMBREE)
   target_compile_definitions(rftrace PRIVATE RFTRACE_HAVE_EMBREE=1)
 endif()
 
+# ---- Metal GPU backend (Apple only) -----------------------------------------
+# The Objective-C++ backend is compiled only when explicitly enabled on Apple.
+# RFTRACE_HAVE_METAL is PUBLIC so consumers (and the guarded factory header)
+# can key off it. The kernel is compiled at runtime via newLibraryWithSource,
+# so no offline .metallib step is needed.
+if(RFTRACE_ENABLE_METAL AND APPLE)
+  enable_language(OBJCXX)
+  target_sources(rftrace PRIVATE src/backends/metal/metal_backend.mm)
+  set_source_files_properties(src/backends/metal/metal_backend.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_METAL=1)
+  target_link_libraries(rftrace PRIVATE
+    "-framework Metal" "-framework Foundation")
+endif()
+
 # ---- Tests -------------------------------------------------------------------
 if(RFTRACE_BUILD_TESTS)
   enable_testing()

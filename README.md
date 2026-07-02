@@ -72,8 +72,29 @@ result.to_gltf("debug_rays.gltf")
 - **Build/test**: `just py-build` and `just py-test` (needs a `python3` with `pybind11` +
   `numpy`). The extension builds only when `-DRFTRACE_ENABLE_PYTHON=ON`.
 
-Out of scope until later phases: GPU backends, Python bindings, terrain/GeoTIFF,
-diffraction, atmospheric/vegetation attenuation, MIMO, route simulation, CZML/3D-Tiles.
+## Phase 4 capabilities (Metal GPU backend)
+
+A native Apple **Metal** backend implements the `IBackend` traversal contract with hardware
+ray tracing (`MTLAccelerationStructure` + a runtime-compiled `metal_raytracing` compute
+kernel). RF physics stays backend-agnostic — Metal only accelerates traversal.
+
+- **Batched query API** on `IBackend` (`closestHitBatch` / `occludedBatch`, default CPU-loop
+  impl) — where GPU acceleration pays off; the Metal backend overrides them with one dispatch.
+- **CPU-vs-Metal parity** is validated on the golden scenes + random geometry (~40k ray
+  comparisons; float-vs-double tolerance `|Δt| ≤ max(1e-2 m, 1e-4·|t|)`, matching triangle
+  indices for well-separated geometry). Tests `GTEST_SKIP` when no GPU is present.
+- **Selection / fallback**: `Backend::Metal` is used when built with `-DRFTRACE_ENABLE_METAL=ON`
+  and a ray-tracing-capable device exists; otherwise the engine falls back to CPU.
+- Build/run: `just metal` (configures `build-metal` with the flag and runs its ctest). Metal
+  is not part of the default `ci` recipe.
+
+> Note: the Phase 1 image-method simulator still issues per-ray queries, so selecting Metal
+> as the *simulator* backend is correct but not yet faster than CPU; the batched API is the
+> foundation for a future batched simulator path. Today Metal is a validated, batch-capable
+> traversal backend and the reference for the CUDA/OpenCL backends to come.
+
+Out of scope until later phases: CUDA/OpenCL backends, terrain/GeoTIFF, diffraction,
+atmospheric/vegetation attenuation, MIMO, route simulation, CZML/3D-Tiles.
 See `openspec/project.md` for the full roadmap.
 
 ## Building
