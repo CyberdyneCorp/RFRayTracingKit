@@ -48,6 +48,7 @@ add_executable(rftrace_tests
   test_diffraction.cpp
   test_multiedge_diffraction.cpp
   test_utd.cpp
+  test_rf_wiring.cpp
   test_polarization.cpp
   test_doppler.cpp
   test_attenuation.cpp

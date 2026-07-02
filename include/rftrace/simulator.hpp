@@ -22,7 +22,7 @@ enum class PropagationMode { ImageMethod, RayLaunch };
 ///   Bullington — multi-edge equivalent knife edge from a terrain profile.
 ///   Deygout    — multi-edge recursive dominant-edge from a terrain profile.
 /// SingleEdge reproduces the archived behavior bit-for-bit.
-enum class DiffractionModel { SingleEdge, Bullington, Deygout };
+enum class DiffractionModel { SingleEdge, Bullington, Deygout, UTD };
 
 /// Knobs controlling a simulation run. Defaults form a runnable configuration
 /// that preserves Phase 1 behavior (image method, point receivers).
@@ -50,6 +50,10 @@ struct SimulationSettings {
   /// Default SingleEdge keeps the archived single dominant knife-edge behavior;
   /// Bullington / Deygout build a terrain profile and apply the multi-edge loss.
   DiffractionModel diffractionModel = DiffractionModel::SingleEdge;
+  /// Depolarize the wave on reflection (apply per-bounce TE/TM Fresnel to the
+  /// Jones state). Default off so reflected-path polarization mismatch stays 0 dB
+  /// for co-polar links and archived results are unchanged.
+  bool enableDepolarization = false;
 
   /// Enable rain attenuation (ITU-R P.838); rate in mm/hr when enabled.
   bool enableRain = false;

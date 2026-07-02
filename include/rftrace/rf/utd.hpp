@@ -171,4 +171,26 @@ inline UtdComplex utdWedgeCoefficient(double phi, double phiPrime, double beta0,
   return prefactor * bracket;
 }
 
+/// Single-edge diffraction loss (dB) as a function of the Fresnel-Kirchhoff
+/// parameter v, computed from the UTD wedge coefficient for a conducting
+/// half-plane (n = 2) — a knife edge IS a half-plane, so this tracks the ITU-R
+/// knife-edge loss: ~6 dB at the grazing shadow boundary (v = 0) and increasing
+/// monotonically into the shadow. A fixed reference geometry maps v to the
+/// diffraction angle, so the returned loss depends only on v. This lets the UTD
+/// model be used as a drop-in alternative to `knifeEdgeLossDb` in the path finder.
+inline double utdDiffractionLossDb(double v) {
+  if (v <= -0.78) return 0.0;  // ample Fresnel clearance -> no diffraction loss
+  const double d1 = 1000.0, d2 = 1000.0, lambda = 1.0;
+  const double k = constants::two_pi / lambda;
+  const double L = d1 * d2 / (d1 + d2);
+  const double scale = std::sqrt(2.0 * (d1 + d2) / (lambda * d1 * d2));  // v = h*scale
+  const double h = v / scale;
+  const double delta = h * (1.0 / d1 + 1.0 / d2);  // diffraction angle into shadow
+  const double phi = 1.5 * constants::pi + delta;  // just inside the incident shadow
+  const UtdComplex D =
+      utdWedgeCoefficient(phi, constants::pi / 2.0, constants::pi / 2.0, 2.0, k, L);
+  const double ratio = std::abs(D) * std::sqrt((d1 + d2) / (d1 * d2));  // = |D|/sqrt(L)
+  return std::max(0.0, -20.0 * std::log10(ratio));
+}
+
 }  // namespace rftrace::rf
