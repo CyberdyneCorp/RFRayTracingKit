@@ -1,6 +1,16 @@
 #include "rftrace/scene.hpp"
 
+#include <cmath>
+
 namespace rftrace {
+
+namespace {
+/// Metres per degree of longitude at the equator and per degree of latitude,
+/// matching the equirectangular ENU projection used by all geospatial importers.
+inline constexpr double kMetersPerDegLonEquator = 111320.0;
+inline constexpr double kMetersPerDegLat = 110540.0;
+inline constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+}  // namespace
 
 Scene::Scene() {
   // Index 0 is always a neutral default material used for unassigned meshes.
@@ -54,6 +64,29 @@ void Scene::addMesh(const std::vector<Triangle>& triangles, int materialIndex) {
     triangles_.push_back(t);
     triangleMaterial_.push_back(index);
   }
+}
+
+void Scene::setGeoOrigin(double latDeg, double lonDeg) {
+  coordinateSystem_.originLat = latDeg;
+  coordinateSystem_.originLon = lonDeg;
+  coordinateSystem_.georeferenced = true;
+}
+
+Vec3 Scene::geoProject(double latDeg, double lonDeg, double altMeters) const {
+  if (!coordinateSystem_.georeferenced)
+    throw SceneError("geoProject called before a geographic origin was set");
+  const double x = (lonDeg - coordinateSystem_.originLon) *
+                   kMetersPerDegLonEquator *
+                   std::cos(coordinateSystem_.originLat * kDegToRad);
+  const double y =
+      (latDeg - coordinateSystem_.originLat) * kMetersPerDegLat;
+  return Vec3(x, y, altMeters);
+}
+
+double Scene::groundElevationAt(double x, double y) const {
+  if (!terrain_) return 0.0;
+  const double e = terrain_->elevationAt(x, y);
+  return std::isfinite(e) ? e : 0.0;
 }
 
 void Scene::addTransmitter(const Transmitter& tx) {

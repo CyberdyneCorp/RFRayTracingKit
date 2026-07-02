@@ -11,6 +11,14 @@
     "tests": {
       "description": "Build the test suite",
       "dependencies": ["gtest"]
+    },
+    "geo": {
+      "description": "GeoTIFF/DEM import + GeoTIFF heatmap export (RFTRACE_ENABLE_GDAL)",
+      "dependencies": ["gdal"]
+    },
+    "parquet": {
+      "description": "Parquet receiver-table export (RFTRACE_ENABLE_PARQUET)",
+      "dependencies": [{"name": "arrow", "features": ["parquet"]}]
     }
   }
 }

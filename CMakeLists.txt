@@ -17,6 +17,8 @@ option(RFTRACE_ENABLE_METAL   "Enable the Metal backend"      OFF)
 option(RFTRACE_ENABLE_CUDA    "Enable the CUDA/OptiX backend" OFF)
 option(RFTRACE_ENABLE_OPENCL  "Enable the OpenCL backend"     OFF)
 option(RFTRACE_ENABLE_EMBREE  "Enable the optional Embree CPU backend" OFF)
+option(RFTRACE_ENABLE_GDAL    "Enable GDAL-backed GeoTIFF/DEM import & export" OFF)
+option(RFTRACE_ENABLE_PARQUET "Enable Apache Arrow/Parquet result export" OFF)
 
 # ---- Dependencies ------------------------------------------------------------
 # Resolved via vcpkg (toolchain file) or a system package manager (e.g. Homebrew)
@@ -29,6 +31,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_library(rftrace
   src/core/geometry.cpp
   src/core/bvh.cpp
+  src/core/footprint.cpp
   src/scene.cpp
   src/antenna.cpp
   src/backends/cpu_nanort/cpu_backend.cpp
@@ -36,10 +39,20 @@ add_library(rftrace
   src/simulator.cpp
   src/importers/mesh_importer.cpp
   src/importers/material_importer.cpp
+  src/importers/msi_importer.cpp
+  src/importers/geo_import_util.cpp
+  src/importers/geojson_importer.cpp
+  src/importers/cityjson_importer.cpp
+  src/importers/osm_importer.cpp
+  src/importers/geotiff_terrain.cpp
   src/exporters/json_exporter.cpp
   src/exporters/csv_exporter.cpp
   src/exporters/geojson_exporter.cpp
   src/exporters/gltf_exporter.cpp
+  src/exporters/czml_exporter.cpp
+  src/exporters/tiles3d_exporter.cpp
+  src/exporters/parquet_exporter.cpp
+  src/exporters/geotiff_heatmap.cpp
 )
 add_library(rftrace::rftrace ALIAS rftrace)
 
@@ -57,6 +70,30 @@ if(RFTRACE_ENABLE_EMBREE)
   find_package(embree 4 CONFIG REQUIRED)
   target_link_libraries(rftrace PRIVATE embree)
   target_compile_definitions(rftrace PRIVATE RFTRACE_HAVE_EMBREE=1)
+endif()
+
+# ---- GDAL (GeoTIFF/DEM import + heatmap export) ------------------------------
+# Optional. The GeoTIFF sources (src/importers/geotiff_terrain.cpp,
+# src/exporters/geotiff_heatmap.cpp) are always compiled, but their GDAL-backed
+# bodies are guarded by RFTRACE_HAVE_GDAL. When OFF the entry points are still
+# defined and throw a clear "built without GDAL" error, and gdalAvailable()
+# reports false. RFTRACE_HAVE_GDAL is PUBLIC so guarded headers/tests key off it.
+if(RFTRACE_ENABLE_GDAL)
+  find_package(GDAL CONFIG REQUIRED)
+  target_link_libraries(rftrace PRIVATE GDAL::GDAL)
+  target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_GDAL=1)
+endif()
+
+# ---- Apache Arrow / Parquet (per-receiver table export) ----------------------
+# Optional. When OFF the Parquet entry point is declared but throws a clear
+# "built without Parquet" error and parquetAvailable() reports false.
+# RFTRACE_HAVE_PARQUET is PUBLIC so guarded headers/tests can key off it. The
+# gated .cpp files are only compiled when ON (added by later tasks).
+if(RFTRACE_ENABLE_PARQUET)
+  find_package(Arrow CONFIG REQUIRED)
+  find_package(Parquet CONFIG REQUIRED)
+  target_link_libraries(rftrace PRIVATE Arrow::arrow_shared Parquet::parquet_shared)
+  target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_PARQUET=1)
 endif()
 
 # ---- Metal GPU backend (Apple only) -----------------------------------------
