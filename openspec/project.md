@@ -100,10 +100,17 @@ independent receivers/cells (disjoint output slots ⇒ schedule-independent, CPU
 the parallel path by default; (3) **backend reuse across runs** (scene-geometry-hash cache) so
 parameter sweeps and coverage+route on one scene skip the per-run acceleration-structure build.
 
+A **C API** (`librftrace_c`, a stable no-throw `extern "C"` ABI behind `RFTRACE_ENABLE_C_API` — opaque
+handles, status/error codes, explicit ownership, count-then-fill results, versioned) wraps the core
+without changing it; it is C-tested (values match the C++ `Simulator`) and ASan/UBSan/LSan-clean. An
+idiomatic **Swift package** (`bindings/swift/`, throwing + value types + RAII) sits on top of the C
+API — authored to the C ABI and UNVERIFIED here (no Swift toolchain on this host), to be validated
+where Swift is available.
+
 **Known gaps / not yet built:** batching the remaining per-ray query sites
 (image-method reflection segments, `buildTerrainProfile` down-rays, diffraction edges) for
 traversal-heavy scenes; Embree adapter (flag maps to CPU); general multi-edge/wedge UTD path model
-(current UTD reuses the dominant-edge v as a half-plane); Swift bindings + C API; CLI tools
+(current UTD reuses the dominant-edge v as a half-plane); CLI tools
 (`rftrace-cli`, `scene-validator`, `result-converter`); CI workflow.
 
 ## Project Conventions
