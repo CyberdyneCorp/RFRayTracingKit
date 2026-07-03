@@ -88,10 +88,12 @@ kernel). RF physics stays backend-agnostic — Metal only accelerates traversal.
 - Build/run: `just metal` (configures `build-metal` with the flag and runs its ctest). Metal
   is not part of the default `ci` recipe.
 
-> Note: the Phase 1 image-method simulator still issues per-ray queries, so selecting Metal
-> as the *simulator* backend is correct but not yet faster than CPU; the batched API is the
-> foundation for a future batched simulator path. Today Metal is a validated, batch-capable
-> traversal backend and the reference for the CUDA/OpenCL backends to come.
+> Note: the image-method simulator still issues per-ray queries, so selecting a GPU backend as
+> the *simulator* backend is correct but not yet faster than CPU. The batched query API — now
+> including the zero-allocation caller-owned-output forms (`closestHitBatchInto` /
+> `occludedBatchInto`) — is the foundation for a batched simulator path (the next roadmap step
+> for the GPU backends). Today Metal, CUDA (verified on an RTX 5060), and OpenCL are validated,
+> batch-capable traversal backends.
 
 ## OpenCL GPU backend
 
@@ -223,8 +225,10 @@ GDAL/Parquet-gated functions are present only when the extension is built with t
 `rf.gdal_available()` / `rf.parquet_available()` probe at runtime. Build all optional IO with
 `just io` (GDAL + Parquet + libosmium).
 
-Out of scope until later phases: full UTD as a selectable path model, CZML/3D-Tiles route
-animation. See `openspec/project.md` for the full roadmap.
+Not yet built: a batched simulator path so GPU backends accelerate a full run (the loops are
+still per-ray), a general multi-edge/wedge UTD path model (the current selectable UTD reuses the
+dominant edge as a half-plane), an Embree adapter, CLI tools, Swift/C bindings, and a CI
+workflow. See `openspec/project.md` for the full roadmap.
 
 ## Building
 
