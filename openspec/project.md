@@ -79,16 +79,24 @@ Status as of 2026-07-03 (all core work verified by build+test unless noted):
 UTD is now a selectable diffraction path model (`DiffractionModel::UTD`, tracks knife-edge) and
 reflection **depolarization** is wired (opt-in via `enableDepolarization`).
 
-The batched query API is now **caller-owned-output capable**: `IBackend::closestHitBatchInto`
-/ `occludedBatchInto` write into a caller-reused `std::span`, allocating nothing for the output
-(the vector-returning forms are thin wrappers). The CUDA backend overrides these as its
-zero-output-allocation fast path.
+The batched query API is **caller-owned-output capable**: `IBackend::closestHitBatchInto` /
+`occludedBatchInto` write into a caller-reused `std::span`, allocating nothing for the output (the
+vector-returning forms are thin wrappers). The CUDA backend overrides these as its
+zero-output-allocation fast path. The **simulator now uses this batched path** for its
+independent-ray stages — LOS occlusion (across all receivers/coverage cells) and the ray-launch
+wavefront (`closestHit` batched per bounce across live rays) — so a whole run's traversal is a
+handful of device dispatches, not per-ray round trips (verified on an RTX 5060; results bit-for-bit
+identical to the per-ray path, CPU-neutral). Measured end-to-end, full-run wall time is dominated by
+CPU-side path processing (capture/dedup, RF physics, aggregation) and per-run backend construction,
+not ray traversal, so GPU vs CPU is ~break-even for typical scenes — the traversal batching was
+necessary but the remaining full-run bottleneck is CPU-side.
 
-**Known gaps / not yet built:** a *batched* simulator path so GPU backends accelerate a full
-run (the image-method/coverage loops still issue per-ray `closestHit`/`occluded`, so a real
-run does not yet use the batched `...Into` API — the highest-value next step for the GPU
-backends); Embree adapter (flag maps to CPU); general multi-edge/wedge UTD path model (current
-UTD reuses the dominant-edge v as a half-plane); Swift bindings + C API; CLI tools
+**Known gaps / not yet built:** CPU-side full-run acceleration (threading the receiver/capture
+loops, a spatial index for the O(rays×receivers) capture test, backend reuse across runs) — the
+real full-run lever now that traversal is batched; batching the remaining per-ray query sites
+(image-method reflection segments, `buildTerrainProfile` down-rays, diffraction edges) for
+traversal-heavy scenes; Embree adapter (flag maps to CPU); general multi-edge/wedge UTD path model
+(current UTD reuses the dominant-edge v as a half-plane); Swift bindings + C API; CLI tools
 (`rftrace-cli`, `scene-validator`, `result-converter`); CI workflow.
 
 ## Project Conventions
