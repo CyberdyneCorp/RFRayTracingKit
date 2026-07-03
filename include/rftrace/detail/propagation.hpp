@@ -245,6 +245,21 @@ inline void finishPath(RFPath& path, const Transmitter& tx, const Receiver& rx,
   path.delaySeconds = rf::propagationDelaySeconds(len);
 }
 
+/// Build the direct LOS RFPath for a (tx, rx) pair whose direct segment is
+/// already known to be clear. This is the exact tail of `losPath` factored out
+/// so the batched LOS sites and the per-ray `losPath` produce byte-identical
+/// paths.
+inline RFPath buildLosPath(const Transmitter& tx, const Receiver& rx,
+                           const PropagationContext* ctx = nullptr) {
+  RFPath p;
+  p.transmitterId = tx.id;
+  p.receiverId = rx.id;
+  p.type = PathType::LOS;
+  p.points = {tx.position, rx.position};
+  finishPath(p, tx, rx, 0.0, ctx);
+  return p;
+}
+
 // --- Engines (implemented across translation units) -------------------------
 
 /// LOS path for a (tx, rx) pair if unobstructed. `ctx` (optional) carries the
