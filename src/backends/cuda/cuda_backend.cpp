@@ -118,6 +118,8 @@ class CudaBackend final : public IBackend {
 
   ~CudaBackend() override {
     releaseScene();
+    if (rayBuf_) cudaFree(reinterpret_cast<void*>(rayBuf_));
+    if (hitBuf_) cudaFree(reinterpret_cast<void*>(hitBuf_));
     if (paramsBuf_) cudaFree(reinterpret_cast<void*>(paramsBuf_));
     if (raygenRecord_) cudaFree(reinterpret_cast<void*>(raygenRecord_));
     if (missRecord_) cudaFree(reinterpret_cast<void*>(missRecord_));
@@ -421,21 +423,14 @@ class CudaBackend final : public IBackend {
     std::vector<GpuRay> gpuRays(count);
     for (std::uint32_t i = 0; i < count; ++i) gpuRays[i] = toGpuRay(rays[i]);
 
-    CUdeviceptr rayBuf = 0;
-    CUdeviceptr hitBuf = 0;
-    cudaCheck(cudaMalloc(reinterpret_cast<void**>(&rayBuf),
-                         count * sizeof(GpuRay)),
-              "cudaMalloc(rays)");
-    cudaCheck(cudaMalloc(reinterpret_cast<void**>(&hitBuf),
-                         count * sizeof(GpuHit)),
-              "cudaMalloc(hits)");
-    cudaCheck(cudaMemcpy(reinterpret_cast<void*>(rayBuf), gpuRays.data(),
+    ensureQueryCapacity(count);
+    cudaCheck(cudaMemcpy(reinterpret_cast<void*>(rayBuf_), gpuRays.data(),
                          count * sizeof(GpuRay), cudaMemcpyHostToDevice),
               "cudaMemcpy(rays)");
 
     LaunchParams params = {};
-    params.rays = reinterpret_cast<const GpuRay*>(rayBuf);
-    params.hits = reinterpret_cast<GpuHit*>(hitBuf);
+    params.rays = reinterpret_cast<const GpuRay*>(rayBuf_);
+    params.hits = reinterpret_cast<GpuHit*>(hitBuf_);
     params.count = count;
     params.occlusion = occlusion ? 1u : 0u;
     params.handle = static_cast<unsigned long long>(handle_);
@@ -448,13 +443,29 @@ class CudaBackend final : public IBackend {
                "optixLaunch");
     cudaCheck(cudaStreamSynchronize(stream_), "cudaStreamSynchronize(launch)");
 
-    cudaCheck(cudaMemcpy(result.data(), reinterpret_cast<void*>(hitBuf),
+    cudaCheck(cudaMemcpy(result.data(), reinterpret_cast<void*>(hitBuf_),
                          count * sizeof(GpuHit), cudaMemcpyDeviceToHost),
               "cudaMemcpy(hits)");
-
-    cudaFree(reinterpret_cast<void*>(rayBuf));
-    cudaFree(reinterpret_cast<void*>(hitBuf));
     return result;
+  }
+
+  // Grow the reusable device ray/hit buffers to hold at least `count` rays.
+  // Pooled across dispatch() calls (grown on demand, never shrunk) so a steady
+  // batch size allocates once instead of cudaMalloc/cudaFree per launch.
+  void ensureQueryCapacity(std::size_t count) const {
+    if (count <= rayCapacity_) return;
+    if (rayBuf_) cudaFree(reinterpret_cast<void*>(rayBuf_));
+    if (hitBuf_) cudaFree(reinterpret_cast<void*>(hitBuf_));
+    rayBuf_ = 0;
+    hitBuf_ = 0;
+    rayCapacity_ = 0;  // stay consistent if a malloc below throws
+    cudaCheck(cudaMalloc(reinterpret_cast<void**>(&rayBuf_),
+                         count * sizeof(GpuRay)),
+              "cudaMalloc(rays)");
+    cudaCheck(cudaMalloc(reinterpret_cast<void**>(&hitBuf_),
+                         count * sizeof(GpuHit)),
+              "cudaMalloc(hits)");
+    rayCapacity_ = count;
   }
 
   void releaseScene() {
@@ -480,6 +491,13 @@ class CudaBackend final : public IBackend {
   CUdeviceptr missRecord_ = 0;
   CUdeviceptr hitRecord_ = 0;
   CUdeviceptr paramsBuf_ = 0;
+
+  // Reusable per-query device buffers, pooled across dispatch() calls (grown on
+  // demand, never shrunk). Mutable because dispatch()/ensureQueryCapacity() are
+  // const; safe under the documented single-threaded query contract.
+  mutable CUdeviceptr rayBuf_ = 0;
+  mutable CUdeviceptr hitBuf_ = 0;
+  mutable std::size_t rayCapacity_ = 0;
 
   // Scene (rebuilt on each build()).
   CUdeviceptr vertBuf_ = 0;
