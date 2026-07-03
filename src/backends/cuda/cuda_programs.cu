@@ -4,9 +4,9 @@
 // loaded at runtime via optixModuleCreate. RF physics stays double on the host;
 // here everything is float32 (the acceleration structure is built in float).
 //
-// UNVERIFIED on non-NVIDIA hosts: this file is compiled only when the CUDA
-// Toolkit + OptiX SDK are present (RFTRACE_ENABLE_CUDA=ON). It follows the
-// standard OptiX 7/8 SDK program structure and the Metal backend's semantics.
+// Verified on an RTX 5060 (OptiX SDK 9.0.0); compiled only when the CUDA Toolkit
+// + OptiX SDK are present (RFTRACE_ENABLE_CUDA=ON). Follows the standard OptiX
+// 7/8 SDK program structure and the Metal backend's semantics.
 
 #include <optix.h>
 

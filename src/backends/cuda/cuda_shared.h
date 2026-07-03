@@ -3,8 +3,8 @@
 // so the two sides agree byte-for-byte. Only plain scalars are used (no float3)
 // to avoid CUDA alignment surprises across the host/device boundary.
 //
-// UNVERIFIED on non-NVIDIA hosts: this file is compiled only when the CUDA
-// Toolkit + OptiX SDK are present (RFTRACE_ENABLE_CUDA=ON).
+// Verified on an RTX 5060 (OptiX SDK 9.0.0); compiled only when the CUDA Toolkit
+// + OptiX SDK are present (RFTRACE_ENABLE_CUDA=ON).
 
 #ifndef RFTRACE_CUDA_SHARED_H
 #define RFTRACE_CUDA_SHARED_H
