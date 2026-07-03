@@ -91,9 +91,16 @@ CPU-side path processing (capture/dedup, RF physics, aggregation) and per-run ba
 not ray traversal, so GPU vs CPU is ~break-even for typical scenes — the traversal batching was
 necessary but the remaining full-run bottleneck is CPU-side.
 
-**Known gaps / not yet built:** CPU-side full-run acceleration (threading the receiver/capture
-loops, a spatial index for the O(rays×receivers) capture test, backend reuse across runs) — the
-real full-run lever now that traversal is batched; batching the remaining per-ray query sites
+**CPU-side full-run acceleration** then addressed that bottleneck, all results-preserving
+(bit-for-bit, deterministic): (1) an exact **receiver capture spatial index** (uniform grid) that
+turns the ray-launch O(rays×receivers) capture scan near-linear — **ray-launch coverage 2.33 s →
+0.074 s (~31×)** on a 25.6k-cell grid; (2) **deterministic `threadCount` parallelism** over
+independent receivers/cells (disjoint output slots ⇒ schedule-independent, CPU-backend-gated) —
+**~2.7–8.5× on reflection-heavy image-method coverage** at 24 cores, with the golden suites passing on
+the parallel path by default; (3) **backend reuse across runs** (scene-geometry-hash cache) so
+parameter sweeps and coverage+route on one scene skip the per-run acceleration-structure build.
+
+**Known gaps / not yet built:** batching the remaining per-ray query sites
 (image-method reflection segments, `buildTerrainProfile` down-rays, diffraction edges) for
 traversal-heavy scenes; Embree adapter (flag maps to CPU); general multi-edge/wedge UTD path model
 (current UTD reuses the dominant-edge v as a half-plane); Swift bindings + C API; CLI tools

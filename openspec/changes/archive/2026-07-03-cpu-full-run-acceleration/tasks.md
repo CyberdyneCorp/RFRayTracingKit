@@ -26,5 +26,5 @@
 
 ## 5. Validation & docs
 
-- [ ] 5.1 Record the CPU full-run speedup per phase (spatial index, threading, reuse) on a representative coverage/route scene; note scaling with core count and receiver density.
-- [ ] 5.2 Update README (simulator full-run acceleration; `threadCount` knob) and `openspec/project.md` (move CPU-side full-run acceleration from known gaps to done); run `openspec validate --strict` and archive the change.
+- [x] 5.1 Record the CPU full-run speedup per phase (spatial index, threading, reuse) on a representative coverage/route scene; note scaling with core count and receiver density. — Measured on a 25.6k-cell grid (RTX 5060 host, 24 cores): ray-launch coverage 2.33 s → 0.074 s (~31×, spatial index); reflection-heavy image-method coverage ~2.7× (1 refl) to ~8.5× (2 refl) at 24 threads, bit-for-bit identical; backend reuse removes the per-run acceleration-structure build on repeated runs.
+- [x] 5.2 Update README (simulator full-run acceleration; `threadCount` knob) and `openspec/project.md` (move CPU-side full-run acceleration from known gaps to done); run `openspec validate --strict` and archive the change.

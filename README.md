@@ -95,9 +95,12 @@ kernel). RF physics stays backend-agnostic — Metal only accelerates traversal.
 > of device dispatches instead of per-ray host↔device round trips (verified on an RTX 5060 with a
 > CPU-vs-CUDA coverage-agreement test). Measured end-to-end, however, full-run wall time is
 > dominated by CPU-side path processing (capture/dedup, RF physics, aggregation) and per-run
-> backend construction — not ray traversal — so GPU vs CPU is roughly break-even for these scenes;
-> further full-run speedup is a CPU-side concern (threading, capture spatial index, backend reuse).
-> Today Metal, CUDA (verified on an RTX 5060), and OpenCL are validated, batch-capable backends.
+> backend construction — not ray traversal — so GPU vs CPU is roughly break-even for these scenes.
+> That CPU-side bottleneck is now addressed (all bit-for-bit): an exact receiver **capture spatial
+> index** (ray-launch coverage ~31× faster), **deterministic `threadCount` parallelism** over
+> independent receivers/cells (~2.7–8.5× on reflection-heavy coverage at 24 cores), and **backend
+> reuse** across runs on one scene. Today Metal, CUDA (verified on an RTX 5060), and OpenCL are
+> validated, batch-capable backends.
 
 ## OpenCL GPU backend
 
@@ -229,10 +232,8 @@ GDAL/Parquet-gated functions are present only when the extension is built with t
 `rf.gdal_available()` / `rf.parquet_available()` probe at runtime. Build all optional IO with
 `just io` (GDAL + Parquet + libosmium).
 
-Not yet built: CPU-side full-run acceleration (the batched simulator path removed per-ray
-host↔device round trips, but full-run time is now CPU-bound on capture/dedup + RF physics —
-threading, a capture spatial index, and backend reuse are the next levers); batching the remaining
-per-ray sites (image-method reflection segments, diffraction edges, terrain probes) for
+Not yet built: batching the remaining per-ray sites (image-method reflection segments, diffraction
+edges, terrain probes) for
 traversal-heavy scenes; a general multi-edge/wedge UTD path model (the current selectable UTD
 reuses the dominant edge as a half-plane); an Embree adapter, CLI tools, Swift/C bindings, and a CI
 workflow. See `openspec/project.md` for the full roadmap.
