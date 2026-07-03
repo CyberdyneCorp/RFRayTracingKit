@@ -1,5 +1,7 @@
 # RFTraceKit
 
+[![CI](https://github.com/CyberdyneCorp/RFRayTracingKit/actions/workflows/ci.yml/badge.svg)](https://github.com/CyberdyneCorp/RFRayTracingKit/actions/workflows/ci.yml)
+
 Modern **C++20** library for general **ray tracing** and **RF propagation simulation**
 (4G/5G/6G and above). It takes a 3D scene (buildings, terrain, materials) plus
 transmitters and receivers and computes propagation paths, received power, path loss,
@@ -240,8 +242,12 @@ Swift toolchain exists.
 Not yet built: batching the remaining per-ray sites (image-method reflection segments, diffraction
 edges, terrain probes) for
 traversal-heavy scenes; a general multi-edge/wedge UTD path model (the current selectable UTD
-reuses the dominant edge as a half-plane); an Embree adapter, CLI tools, and a CI
-workflow. See `openspec/project.md` for the full roadmap.
+reuses the dominant edge as a half-plane); an Embree adapter; and CLI tools. See
+`openspec/project.md` for the full roadmap.
+
+Continuous integration (`.github/workflows/ci.yml`) builds the default C++ core and the C API on
+every push/PR (Ubuntu, clang, vcpkg-cached) and runs the full test suite. The GPU backends and Swift
+bindings are excluded (no GPU/Swift toolchain on runners) and validated on the appropriate hardware.
 
 ## Building
 

@@ -111,7 +111,12 @@ where Swift is available.
 (image-method reflection segments, `buildTerrainProfile` down-rays, diffraction edges) for
 traversal-heavy scenes; Embree adapter (flag maps to CPU); general multi-edge/wedge UTD path model
 (current UTD reuses the dominant-edge v as a half-plane); CLI tools
-(`rftrace-cli`, `scene-validator`, `result-converter`); CI workflow.
+(`rftrace-cli`, `scene-validator`, `result-converter`).
+
+**Continuous integration** (`.github/workflows/ci.yml`) builds the default C++ core and the C API
+(`RFTRACE_ENABLE_C_API=ON`) on every push/PR — Ubuntu + clang, vcpkg with a cached binary store — and
+runs the full CTest suite. The GPU backends (CUDA/Metal/OpenCL) and Swift bindings are excluded (no
+GPU/Swift toolchain on runners) and validated on the appropriate hardware/toolchain.
 
 ## Project Conventions
 
