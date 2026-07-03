@@ -38,6 +38,19 @@ struct SimulationSettings {
   bool allowBackendFallback = true;  ///< fall back to CPU if backend absent
   std::string simulationId = "rftrace_sim";
 
+  /// Worker threads for the deterministic parallel-for over independent
+  /// per-receiver / per-cell work (image-method run() and coverage). Additive
+  /// and default-neutral:
+  ///   0 or negative => std::thread::hardware_concurrency() (fallback 1);
+  ///   1             => the exact pre-change serial code path (bit-for-bit);
+  ///   N             => up to N workers over disjoint output slots.
+  /// Results are bit-for-bit identical regardless of this value: iterations are
+  /// independent, each writes only its own slot, and there is no cross-item
+  /// floating-point reduction. Only effective on the CPU backend (whose queries
+  /// are const and safe for concurrent reads); non-reentrant GPU backends always
+  /// run the serial path.
+  int threadCount = 0;
+
   // --- Phase 7 advanced RF (all additive and DEFAULT-OFF) -------------------
   // With every flag below at its default, the per-path budget, results, and
   // coverage are bit-for-bit identical to the archived Phase 1/2 behavior.

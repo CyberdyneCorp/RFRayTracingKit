@@ -10,6 +10,7 @@
 
 #include "rftrace/cell_planning.hpp"
 #include "rftrace/detail/batch_query.hpp"
+#include "rftrace/detail/parallel_for.hpp"
 #include "rftrace/detail/propagation.hpp"
 #include "rftrace/rf/channel.hpp"
 #include "rftrace/rf/diffraction.hpp"
@@ -458,12 +459,20 @@ RFResult Simulator::run(const Scene& scene) const {
   }
 
   if (settings_.mode == PropagationMode::ImageMethod) {
-    for (std::size_t i = 0; i < receivers.size(); ++i)
+    // Per-receiver reflection collection is independent: each i appends only to
+    // rrs[i].paths (LOS was already pushed above), and imageMethodReflections is
+    // a pure function of (scene, backend, tx, rx) doing const backend queries.
+    // Parallelize over disjoint slots only on the thread-safe CPU backend; any
+    // non-reentrant backend runs the exact serial path (tc == 1).
+    const int tc =
+        backend->kind() == Backend::CPU ? settings_.threadCount : 1;
+    detail::parallelFor(receivers.size(), tc, [&](std::size_t i) {
       for (const Transmitter& tx : scene.transmitters()) {
         auto refl = detail::imageMethodReflections(
             scene, *backend, tx, receivers[i], settings_.maxReflections, &ctx);
         for (auto& p : refl) rrs[i].paths.push_back(std::move(p));
       }
+    });
   } else {  // RayLaunch
     for (const Transmitter& tx : scene.transmitters()) {
       auto perRx =
@@ -609,31 +618,45 @@ void fillCoverageImageMethod(const Scene& scene, IBackend& backend,
     q.runOcclusion(backend);
   }
 
-  std::size_t k = 0;
-  for (int row = 0; row < grid.rows; ++row)
-    for (int col = 0; col < grid.cols; ++col) {
-      Receiver rx;
-      rx.id = "cell";
-      rx.position = grid.cellCenter(row, col);
+  // Per-cell evaluation is independent: cell i builds its own ReceiverResult and
+  // storeCell writes only the disjoint cov slots at index i. The batched-LOS
+  // pre-pass above (q.runOcclusion) is serial; q.occluded() is a const lookup,
+  // safe for concurrent reads. The running token cursor is replaced by the equal
+  // index-derived base offset i*txs.size() (tokens were filled in exactly
+  // row-major-cell / tx-minor order), making each cell independent of any other.
+  // Parallelize over disjoint slots only on the thread-safe CPU backend; any
+  // non-reentrant backend runs the exact serial path (tc == 1).
+  const std::size_t cellCount = static_cast<std::size_t>(grid.cellCount());
+  const std::size_t txCount = txs.size();
+  const int tc = backend.kind() == Backend::CPU ? settings.threadCount : 1;
+  detail::parallelFor(cellCount, tc, [&](std::size_t i) {
+    const int row = static_cast<int>(i) / grid.cols;
+    const int col = static_cast<int>(i) % grid.cols;
+    Receiver rx;
+    rx.id = "cell";
+    rx.position = grid.cellCenter(row, col);
 
-      ReceiverResult rr;
-      rr.receiverId = rx.id;
-      rr.position = rx.position;
-      for (const Transmitter& tx : txs) {
-        if (batchLos) {
-          const std::size_t tok = tokens[k++];
-          const bool blocked =
-              tok == detail::BatchQuery::kNoRay || q.occluded(tok);
-          if (!blocked) rr.paths.push_back(detail::buildLosPath(tx, rx, &ctx));
-        } else if (auto los = detail::losPath(backend, tx, rx, &ctx)) {
-          rr.paths.push_back(std::move(*los));
-        }
-        auto refl = detail::imageMethodReflections(
-            scene, backend, tx, rx, settings.maxReflections, &ctx);
-        for (auto& p : refl) rr.paths.push_back(std::move(p));
+    ReceiverResult rr;
+    rr.receiverId = rx.id;
+    rr.position = rx.position;
+    const std::size_t tokenBase = i * txCount;
+    std::size_t j = 0;
+    for (const Transmitter& tx : txs) {
+      if (batchLos) {
+        const std::size_t tok = tokens[tokenBase + j];
+        const bool blocked =
+            tok == detail::BatchQuery::kNoRay || q.occluded(tok);
+        if (!blocked) rr.paths.push_back(detail::buildLosPath(tx, rx, &ctx));
+      } else if (auto los = detail::losPath(backend, tx, rx, &ctx)) {
+        rr.paths.push_back(std::move(*los));
       }
-      storeCell(cov, row * grid.cols + col, rr, settings);
+      auto refl = detail::imageMethodReflections(
+          scene, backend, tx, rx, settings.maxReflections, &ctx);
+      for (auto& p : refl) rr.paths.push_back(std::move(p));
+      ++j;
     }
+    storeCell(cov, static_cast<int>(i), rr, settings);
+  });
 }
 
 }  // namespace
