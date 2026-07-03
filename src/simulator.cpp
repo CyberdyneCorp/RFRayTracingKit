@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "rftrace/cell_planning.hpp"
+#include "rftrace/detail/batch_query.hpp"
 #include "rftrace/detail/propagation.hpp"
 #include "rftrace/rf/channel.hpp"
 #include "rftrace/rf/diffraction.hpp"
@@ -30,13 +31,7 @@ std::optional<RFPath> losPath(const IBackend& backend, const Transmitter& tx,
                            : backend.occluded(los);
   if (blocked) return std::nullopt;
 
-  RFPath p;
-  p.transmitterId = tx.id;
-  p.receiverId = rx.id;
-  p.type = PathType::LOS;
-  p.points = {tx.position, rx.position};
-  finishPath(p, tx, rx, 0.0, ctx);
-  return p;
+  return buildLosPath(tx, rx, ctx);
 }
 
 namespace {
@@ -415,17 +410,52 @@ RFResult Simulator::run(const Scene& scene) const {
   }
 
   // LOS is deterministic in both modes. When LOS is blocked and diffraction is
-  // enabled, attempt a single dominant knife-edge detour instead.
-  for (std::size_t i = 0; i < receivers.size(); ++i)
-    for (const Transmitter& tx : scene.transmitters()) {
-      if (auto los = detail::losPath(*backend, tx, receivers[i], &ctx)) {
-        rrs[i].paths.push_back(std::move(*los));
-      } else if (settings_.enableDiffraction) {
-        if (auto dif = detail::diffractionPath(scene, *backend, tx, receivers[i],
-                                               tx.frequencyHz, &ctx))
-          rrs[i].paths.push_back(std::move(*dif));
+  // enabled, attempt a single dominant knife-edge detour instead. With
+  // vegetation OFF the plain occlusion decisions are batched into a single
+  // backend dispatch; the vegetation walk (D5) stays per-ray. The follow-up
+  // (LOS push, else diffraction) runs in the SAME nested order in both cases,
+  // so per-receiver path insertion order is preserved.
+  if (settings_.enableVegetation) {
+    for (std::size_t i = 0; i < receivers.size(); ++i)
+      for (const Transmitter& tx : scene.transmitters()) {
+        if (auto los = detail::losPath(*backend, tx, receivers[i], &ctx)) {
+          rrs[i].paths.push_back(std::move(*los));
+        } else if (settings_.enableDiffraction) {
+          if (auto dif = detail::diffractionPath(scene, *backend, tx,
+                                                 receivers[i], tx.frequencyHz,
+                                                 &ctx))
+            rrs[i].paths.push_back(std::move(*dif));
+        }
       }
-    }
+  } else {
+    detail::BatchQuery q;
+    std::vector<std::size_t> tokens;
+    tokens.reserve(receivers.size() * scene.transmitters().size());
+    for (std::size_t i = 0; i < receivers.size(); ++i)
+      for (const Transmitter& tx : scene.transmitters()) {
+        const Ray los = segmentRay(tx.position, receivers[i].position,
+                                   detail::kEps);
+        tokens.push_back(los.tMax <= los.tMin ? detail::BatchQuery::kNoRay
+                                              : q.add(los));
+      }
+    q.runOcclusion(*backend);
+    std::size_t k = 0;
+    for (std::size_t i = 0; i < receivers.size(); ++i)
+      for (const Transmitter& tx : scene.transmitters()) {
+        const std::size_t tok = tokens[k++];
+        const bool blocked =
+            tok == detail::BatchQuery::kNoRay || q.occluded(tok);
+        if (!blocked) {
+          rrs[i].paths.push_back(
+              detail::buildLosPath(tx, receivers[i], &ctx));
+        } else if (settings_.enableDiffraction) {
+          if (auto dif = detail::diffractionPath(scene, *backend, tx,
+                                                 receivers[i], tx.frequencyHz,
+                                                 &ctx))
+            rrs[i].paths.push_back(std::move(*dif));
+        }
+      }
+  }
 
   if (settings_.mode == PropagationMode::ImageMethod) {
     for (std::size_t i = 0; i < receivers.size(); ++i)
@@ -496,11 +526,37 @@ void fillCoverageMultipath(const Scene& scene, IBackend& backend,
     rrs[i].position = cells[i].position;
   }
 
-  // LOS is deterministic and added per cell (rayLaunch returns only reflections).
-  for (std::size_t i = 0; i < cells.size(); ++i)
-    for (const Transmitter& tx : scene.transmitters())
-      if (auto los = detail::losPath(backend, tx, cells[i], &ctx))
-        rrs[i].paths.push_back(std::move(*los));
+  // LOS is deterministic and added per cell (rayLaunch returns only
+  // reflections). With vegetation OFF the plain occlusion decisions are batched
+  // into a single dispatch; the vegetation walk (D5) stays per-ray. Insertion
+  // order over `for i(cells): for tx:` is preserved in both cases.
+  if (settings.enableVegetation) {
+    for (std::size_t i = 0; i < cells.size(); ++i)
+      for (const Transmitter& tx : scene.transmitters())
+        if (auto los = detail::losPath(backend, tx, cells[i], &ctx))
+          rrs[i].paths.push_back(std::move(*los));
+  } else {
+    detail::BatchQuery q;
+    std::vector<std::size_t> tokens;
+    tokens.reserve(cells.size() * scene.transmitters().size());
+    for (std::size_t i = 0; i < cells.size(); ++i)
+      for (const Transmitter& tx : scene.transmitters()) {
+        const Ray los =
+            segmentRay(tx.position, cells[i].position, detail::kEps);
+        tokens.push_back(los.tMax <= los.tMin ? detail::BatchQuery::kNoRay
+                                              : q.add(los));
+      }
+    q.runOcclusion(backend);
+    std::size_t k = 0;
+    for (std::size_t i = 0; i < cells.size(); ++i)
+      for (const Transmitter& tx : scene.transmitters()) {
+        const std::size_t tok = tokens[k++];
+        const bool blocked =
+            tok == detail::BatchQuery::kNoRay || q.occluded(tok);
+        if (!blocked)
+          rrs[i].paths.push_back(detail::buildLosPath(tx, cells[i], &ctx));
+      }
+  }
 
   // Reflected multipath: one ray launch per transmitter over all capture cells.
   for (const Transmitter& tx : scene.transmitters()) {
@@ -529,6 +585,31 @@ void fillCoverageImageMethod(const Scene& scene, IBackend& backend,
                              const SimulationSettings& settings,
                              const detail::PropagationContext& ctx,
                              CoverageResult& cov) {
+  const auto& txs = scene.transmitters();
+  const bool batchLos = !settings.enableVegetation;
+
+  // Pre-pass (vegetation OFF): batch every cell x tx LOS occlusion decision in
+  // row-major/tx order into a single backend dispatch. Vegetation-on keeps the
+  // per-ray losPath walk (D5). Reflections stay per-ray and are computed inline
+  // in the main loop, so the per-cell interleave LOS(tx),refl(tx) — and thus
+  // path insertion order — is unchanged.
+  detail::BatchQuery q;
+  std::vector<std::size_t> tokens;
+  if (batchLos) {
+    tokens.reserve(static_cast<std::size_t>(grid.cellCount()) * txs.size());
+    for (int row = 0; row < grid.rows; ++row)
+      for (int col = 0; col < grid.cols; ++col) {
+        const Vec3 center = grid.cellCenter(row, col);
+        for (const Transmitter& tx : txs) {
+          const Ray los = segmentRay(tx.position, center, detail::kEps);
+          tokens.push_back(los.tMax <= los.tMin ? detail::BatchQuery::kNoRay
+                                                : q.add(los));
+        }
+      }
+    q.runOcclusion(backend);
+  }
+
+  std::size_t k = 0;
   for (int row = 0; row < grid.rows; ++row)
     for (int col = 0; col < grid.cols; ++col) {
       Receiver rx;
@@ -538,9 +619,15 @@ void fillCoverageImageMethod(const Scene& scene, IBackend& backend,
       ReceiverResult rr;
       rr.receiverId = rx.id;
       rr.position = rx.position;
-      for (const Transmitter& tx : scene.transmitters()) {
-        if (auto los = detail::losPath(backend, tx, rx, &ctx))
+      for (const Transmitter& tx : txs) {
+        if (batchLos) {
+          const std::size_t tok = tokens[k++];
+          const bool blocked =
+              tok == detail::BatchQuery::kNoRay || q.occluded(tok);
+          if (!blocked) rr.paths.push_back(detail::buildLosPath(tx, rx, &ctx));
+        } else if (auto los = detail::losPath(backend, tx, rx, &ctx)) {
           rr.paths.push_back(std::move(*los));
+        }
         auto refl = detail::imageMethodReflections(
             scene, backend, tx, rx, settings.maxReflections, &ctx);
         for (auto& p : refl) rr.paths.push_back(std::move(p));
