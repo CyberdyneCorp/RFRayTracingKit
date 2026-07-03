@@ -12,11 +12,11 @@
 
 ## 3. Phase 2 — Deterministic parallelism + threadCount
 
-- [ ] 3.1 Add `int threadCount` to `SimulationSettings` (additive; 0/negative → hardware concurrency; 1 → exact serial path).
-- [ ] 3.2 Add a tiny in-repo parallel-for / thread-pool utility (header-only, `detail`) with a fixed deterministic index partition, or wire `std::execution::par` if the toolchain supports it.
-- [ ] 3.3 Parallelize `fillCoverageImageMethod` (per cell) and `Simulator::run` per-receiver reflection collection, each writing a disjoint result slot; no cross-task accumulation.
-- [ ] 3.4 Respect backend thread-safety (D3): CPU backend queried concurrently (const reads); for GPU backends keep device dispatch serial / do not issue concurrent queries to one instance.
-- [ ] 3.5 Test: results identical for `threadCount ∈ {1, hardware}` on all entry points; repeated parallel runs deterministic; golden suites green.
+- [x] 3.1 Add `int threadCount` to `SimulationSettings` (additive; 0/negative → hardware concurrency; 1 → exact serial path). Only effective on the CPU backend.
+- [x] 3.2 Add a tiny in-repo parallel-for utility (`include/rftrace/detail/parallel_for.hpp`, header-only, `detail`) with a fixed deterministic contiguous index partition (no work-stealing); `threadCount<=1`/`n==0` take the exact serial ascending-index loop.
+- [x] 3.3 Parallelize `fillCoverageImageMethod` (per cell; running token cursor replaced by the equal index-derived offset `i*txs.size()`) and `Simulator::run` per-receiver reflection collection, each writing a disjoint result slot; no cross-task accumulation. Ray-launch / `fillCoverageMultipath` left serial.
+- [x] 3.4 Respect backend thread-safety (D3): parallelism gated to `backend.kind()==Backend::CPU` (const `occluded`/`closestHit` reads, safe concurrently); every non-CPU backend forces `tc=1` (serial), so a non-reentrant backend is never issued concurrent queries.
+- [x] 3.5 Test (`tests/test_phase2_threading.cpp`): `run()` and `runCoverage()` bit-for-bit identical for `threadCount ∈ {1, 0(hw), explicit hw}` (NaN-safe bit compare over coverage arrays + per-path fields); repeated parallel runs deterministic; full golden suite green (242 tests). Measured ~10x CPU coverage speedup (24 cores) with identical output.
 
 ## 4. Phase 3 — Backend reuse across runs
 
