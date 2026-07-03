@@ -20,13 +20,13 @@
 - [x] 3.5 Wedge-angle sensitivity: a sharper wedge diffracts differently than a half-plane, within physical bounds; determinism across repeated runs.
 - [x] 3.6 Confirm the golden/regression suites stay green (knife-edge default unchanged; non-UTD results unaffected).
 
-## 4. Phase 2 — multi-edge UTD cascade
+## 4. Phase 2 — multi-edge UTD for doubly-obstructed links (revised approach)
 
-- [ ] 4.1 Add a UTD multi-edge cascade (Deygout-analog: dominant edge → recurse on sub-links), mirroring `diffraction_multi.hpp`'s structure but with UTD per-edge loss.
-- [ ] 4.2 Single obstructing edge reduces exactly to the Phase-1 single-wedge result; multiple edges accumulate a finite total ≥ the strongest single edge.
-- [ ] 4.3 Tests: single-edge reduction, multi-edge accumulation, reciprocity, determinism; golden suites green.
+- [x] 4.1 Add a `utdDeygoutLossDb(profile, wavelength)` mirroring `detail::deygoutRecurse`/`deygoutLossDb` in `diffraction_multi.hpp` but with the per-edge loss = `rf::utdDiffractionLossDb(v)` (half-plane UTD) instead of `knifeEdgeLossDb(v)`.
+- [x] 4.2 Wire it into the UTD branch of `diffractionPath` **additively**: keep the single-wedge path when a clearing scene edge is found (unchanged); when none is found (doubly-obstructed link that today returns `nullopt`), build the terrain profile and produce a diffracted path with the UTD Deygout loss. Gate strictly on `DiffractionModel::UTD`.
+- [x] 4.3 Tests: single-obstruction still equals the Phase-1 single-wedge loss (exact, unchanged); a doubly-obstructed link yields a finite loss ≥ the strongest obstacle where the single-wedge path produced none; reciprocity (tx↔rx) and determinism; golden/regression + all Phase-1 gates stay green (additive, so nothing moves).
 
 ## 5. Docs & archive
 
-- [ ] 5.1 Update `include/rftrace/rf/utd.hpp` docs and add a short note in the RF section of the README on the geometry-driven UTD path model + its validation properties.
-- [ ] 5.2 Update `openspec/project.md` (general multi-edge/wedge UTD moved from not-built to done). Run `openspec validate --strict` and archive the change (syncing the modified `utd-diffraction` requirement + the new `utd-wedge-path` capability).
+- [x] 5.1 Update `include/rftrace/rf/utd.hpp` docs and add a short note in the RF section of the README on the geometry-driven UTD path model + its validation properties.
+- [x] 5.2 Update `openspec/project.md` (general multi-edge/wedge UTD moved from not-built to done). Run `openspec validate --strict` and archive the change (syncing the modified `utd-diffraction` requirement + the new `utd-wedge-path` capability).

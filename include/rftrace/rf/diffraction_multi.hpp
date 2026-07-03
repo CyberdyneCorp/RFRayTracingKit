@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "rftrace/rf/diffraction.hpp"
+#include "rftrace/rf/utd.hpp"
 
 namespace rftrace::rf {
 
@@ -87,6 +88,34 @@ inline double deygoutRecurse(const std::vector<ProfilePoint>& obs,
                         depth - 1);
 }
 
+/// UTD analogue of `deygoutRecurse`: identical dominant-edge selection, bounded
+/// recursion and reciprocity, but the per-edge loss is the validated half-plane
+/// UTD loss `utdDiffractionLossDb(v)` (a profile ridge is a half-plane) instead
+/// of `knifeEdgeLossDb(v)`. Same termination (loss ≤ 0 ⇒ the sub-line is clear).
+inline double utdDeygoutRecurse(const std::vector<ProfilePoint>& obs,
+                                std::size_t lo, std::size_t hi,
+                                const ProfilePoint& txEnd,
+                                const ProfilePoint& rxEnd,
+                                double wavelengthMeters, int depth) {
+  if (lo >= hi || depth <= 0) return 0.0;
+  std::size_t best = lo;
+  double bestV = kNoEdgeV;
+  for (std::size_t i = lo; i < hi; ++i) {
+    const double v = profileFresnelParameter(txEnd, rxEnd, obs[i], wavelengthMeters);
+    if (v > bestV) {
+      bestV = v;
+      best = i;
+    }
+  }
+  const double mainLoss = utdDiffractionLossDb(bestV);
+  if (mainLoss <= 0.0) return 0.0;
+  return mainLoss +
+         utdDeygoutRecurse(obs, lo, best, txEnd, obs[best], wavelengthMeters,
+                           depth - 1) +
+         utdDeygoutRecurse(obs, best + 1, hi, obs[best], rxEnd, wavelengthMeters,
+                           depth - 1);
+}
+
 }  // namespace detail
 
 /// Bullington equivalent-knife-edge diffraction loss (dB) for a profile.
@@ -155,6 +184,27 @@ inline double deygoutLossDb(const TerrainProfile& profile,
   return detail::deygoutRecurse(profile.obstacles, 0, profile.obstacles.size(),
                                 txEnd, rxEnd, wavelengthMeters,
                                 maxRecursionDepth);
+}
+
+/// UTD multi-edge (Deygout) diffraction loss (dB) for a profile: the exact
+/// structure of `deygoutLossDb` (dominant max-v edge plus one tx-side and one
+/// rx-side sub-recursion, bounded by `maxRecursionDepth`), but with the per-edge
+/// loss = the validated half-plane UTD `utdDiffractionLossDb(v)` instead of the
+/// ITU-R knife edge. Used for the doubly-obstructed UTD link the single-wedge
+/// selection rejects. A single-obstacle profile reduces EXACTLY to
+/// `utdDiffractionLossDb(v)` for that edge (empty sub-profiles); an empty profile
+/// returns 0. Reciprocal and deterministic (inherited from the Deygout mirror).
+inline double utdDeygoutLossDb(const TerrainProfile& profile,
+                               double wavelengthMeters,
+                               int maxRecursionDepth = 2) {
+  if (profile.obstacles.empty() || profile.totalDistanceMeters <= 0.0 ||
+      wavelengthMeters <= 0.0)
+    return 0.0;
+  const ProfilePoint txEnd{0.0, profile.txHeightMeters};
+  const ProfilePoint rxEnd{profile.totalDistanceMeters, profile.rxHeightMeters};
+  return detail::utdDeygoutRecurse(profile.obstacles, 0,
+                                   profile.obstacles.size(), txEnd, rxEnd,
+                                   wavelengthMeters, maxRecursionDepth);
 }
 
 }  // namespace rftrace::rf

@@ -15,6 +15,7 @@
 
 #include "rftrace/math.hpp"
 #include "rftrace/rf/diffraction.hpp"
+#include "rftrace/rf/diffraction_multi.hpp"
 #include "rftrace/rf/utd.hpp"
 #include "rftrace/rf/utd_geometry.hpp"
 #include "rftrace/simulator.hpp"
@@ -344,6 +345,191 @@ TEST(UtdWedge, SceneBoxCornerWedgeDiffraction) {
   ASSERT_GT(a, 0.0) << "no UTD diffraction path formed at the corner";
   EXPECT_TRUE(std::isfinite(a));
   EXPECT_EQ(a, b);  // determinism
+}
+
+// ===========================================================================
+// PHASE 2 — multi-edge UTD for doubly-obstructed links (additive)
+// ===========================================================================
+
+using rftrace::rf::deygoutLossDb;
+using rftrace::rf::ProfilePoint;
+using rftrace::rf::TerrainProfile;
+using rftrace::rf::utdDeygoutLossDb;
+
+namespace {
+constexpr double kP2Lambda = 0.1;  // 3 GHz-ish, matches multi-edge test scale
+}
+
+// P2 UNIT — a single-obstacle profile reduces EXACTLY to the half-plane UTD loss
+// for that edge (empty sub-profiles), mirroring deygoutLossDb → knifeEdgeLossDb.
+TEST(UtdWedgePhase2, SingleObstacleReducesToSingleUtd) {
+  TerrainProfile prof;
+  prof.totalDistanceMeters = 1000.0;
+  prof.txHeightMeters = 0.0;
+  prof.rxHeightMeters = 0.0;
+  prof.obstacles = {{400.0, 60.0}};
+  // v of that lone obstacle relative to the (flat, z=0) endpoint line.
+  const double v = rftrace::rf::detail::profileFresnelParameter(
+      {0.0, 0.0}, {1000.0, 0.0}, prof.obstacles[0], kP2Lambda);
+  EXPECT_NEAR(utdDeygoutLossDb(prof, kP2Lambda), utdDiffractionLossDb(v), 1e-12);
+}
+
+// P2 UNIT — DOUBLY-OBSTRUCTED FINITE gate: two in-series obstacles yield a finite
+// loss ≥ the strongest single obstacle's UTD contribution (additive Deygout).
+TEST(UtdWedgePhase2, DoublyObstructedFiniteGeStrongest) {
+  TerrainProfile prof;
+  prof.totalDistanceMeters = 1000.0;
+  prof.txHeightMeters = 0.0;
+  prof.rxHeightMeters = 0.0;
+  prof.obstacles = {{300.0, 50.0}, {700.0, 50.0}};
+  const double multi = utdDeygoutLossDb(prof, kP2Lambda);
+  EXPECT_TRUE(std::isfinite(multi));
+  EXPECT_GT(multi, 0.0);
+  // strongest single = dominant (max-v) obstacle's half-plane UTD loss.
+  double vMax = -1e300;
+  for (const ProfilePoint& p : prof.obstacles)
+    vMax = std::max(vMax, rftrace::rf::detail::profileFresnelParameter(
+                              {0.0, 0.0}, {1000.0, 0.0}, p, kP2Lambda));
+  EXPECT_GE(multi, utdDiffractionLossDb(vMax) - 1e-9);
+  // and strictly deeper than a single obstacle alone (second edge adds loss).
+  TerrainProfile one = prof;
+  one.obstacles = {{300.0, 50.0}};
+  EXPECT_GT(multi, utdDeygoutLossDb(one, kP2Lambda));
+}
+
+// P2 UNIT — reciprocity: mirroring the profile (reverse distances, swap endpoint
+// heights) yields identical loss.
+TEST(UtdWedgePhase2, MultiEdgeLossReciprocal) {
+  TerrainProfile fwd;
+  fwd.totalDistanceMeters = 1000.0;
+  fwd.txHeightMeters = 5.0;
+  fwd.rxHeightMeters = 12.0;
+  fwd.obstacles = {{250.0, 55.0}, {600.0, 48.0}, {820.0, 61.0}};
+
+  TerrainProfile rev;
+  rev.totalDistanceMeters = 1000.0;
+  rev.txHeightMeters = fwd.rxHeightMeters;
+  rev.rxHeightMeters = fwd.txHeightMeters;
+  for (auto it = fwd.obstacles.rbegin(); it != fwd.obstacles.rend(); ++it)
+    rev.obstacles.push_back({1000.0 - it->distanceMeters, it->heightMeters});
+
+  EXPECT_NEAR(utdDeygoutLossDb(fwd, kP2Lambda), utdDeygoutLossDb(rev, kP2Lambda),
+              1e-9);
+  // determinism
+  EXPECT_EQ(utdDeygoutLossDb(fwd, kP2Lambda), utdDeygoutLossDb(fwd, kP2Lambda));
+}
+
+// P2 UNIT — empty / clear profile is exactly 0 dB.
+TEST(UtdWedgePhase2, EmptyProfileZero) {
+  TerrainProfile empty;
+  empty.totalDistanceMeters = 1000.0;
+  EXPECT_EQ(utdDeygoutLossDb(empty, kP2Lambda), 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// Scene-level Phase-2 gates via the Simulator
+// ---------------------------------------------------------------------------
+
+// Two tent-shaped ridges (peaks at x=∓15, z=45) in series between a low tx and
+// rx (z=2). Each ridge blocks the LOS; the detour over either peak is occluded
+// by the OTHER ridge, so NO single edge clears the link (doubly-obstructed) — the
+// case Phase 1 rejects. The x-extent slopes let downward profile rays hit them.
+Scene doublyObstructedScene(const Vec3& txPos, const Vec3& rxPos) {
+  Scene s;
+  const double yLo = -300, yHi = 300, H = 45.0;
+  auto ridge = [&](double xa, double xp, double xb) {
+    // left slope xa(z=0) -> xp(z=H), right slope xp(z=H) -> xb(z=0).
+    s.addMesh(
+        {Triangle{{xa, yLo, 0}, {xa, yHi, 0}, {xp, yHi, H}},
+         Triangle{{xa, yLo, 0}, {xp, yHi, H}, {xp, yLo, H}},
+         Triangle{{xp, yLo, H}, {xp, yHi, H}, {xb, yHi, 0}},
+         Triangle{{xp, yLo, H}, {xb, yHi, 0}, {xb, yLo, 0}}},
+        "");
+  };
+  ridge(-25, -15, -5);  // tent 1
+  ridge(5, 15, 25);     // tent 2
+  Transmitter tx;
+  tx.id = "tx";
+  tx.position = txPos;
+  tx.frequencyHz = 3.5e9;
+  tx.powerDbm = 43;
+  s.addTransmitter(tx);
+  Receiver rx;
+  rx.id = "rx";
+  rx.position = rxPos;
+  s.addReceiver(rx);
+  return s;
+}
+
+// Does model `m` produce ANY diffracted path for scene `s`?
+bool hasDiffractionPath(Scene s, DiffractionModel m) {
+  SimulationSettings st;
+  st.maxReflections = 0;
+  st.enableDiffraction = true;
+  st.diffractionModel = m;
+  const RFResult res = Simulator(st).run(s);
+  const auto* r = res.receiver("rx");
+  if (!r) return false;
+  for (const auto& p : r->paths)
+    if (p.type == PathType::Diffraction) return true;
+  return false;
+}
+
+// GATE — DOUBLY-OBSTRUCTED FINITE + ADDITIVE/UTD-GATED: on a doubly-obstructed
+// link the UTD model now emits a finite diffracted path, while knife-edge /
+// Bullington / Deygout (and, by construction, the single-wedge path) produce
+// NONE — proving the multi-edge branch is purely additive and UTD-only.
+TEST(UtdWedgePhase2, SceneDoublyObstructedUtdOnly) {
+  const Vec3 tx{-60, 0, 2}, rx{60, 0, 2};
+
+  // No clearing single edge exists: the non-UTD models yield no diffracted path.
+  EXPECT_FALSE(hasDiffractionPath(doublyObstructedScene(tx, rx),
+                                  DiffractionModel::SingleEdge));
+  EXPECT_FALSE(hasDiffractionPath(doublyObstructedScene(tx, rx),
+                                  DiffractionModel::Bullington));
+  EXPECT_FALSE(hasDiffractionPath(doublyObstructedScene(tx, rx),
+                                  DiffractionModel::Deygout));
+
+  // UTD additively produces a finite, positive-loss diffracted path.
+  const double utd = sceneDiffractionLoss(doublyObstructedScene(tx, rx),
+                                          DiffractionModel::UTD);
+  ASSERT_GT(utd, 0.0) << "UTD produced no doubly-obstructed diffracted path";
+  EXPECT_TRUE(std::isfinite(utd));
+}
+
+// GATE — RECIPROCITY on the doubly-obstructed scene: tx↔rx swap gives equal loss.
+TEST(UtdWedgePhase2, SceneDoublyObstructedReciprocity) {
+  const Vec3 tx{-60, 4, 2}, rx{58, -3, 3};
+  const double fwd =
+      sceneDiffractionLoss(doublyObstructedScene(tx, rx), DiffractionModel::UTD);
+  const double rev =
+      sceneDiffractionLoss(doublyObstructedScene(rx, tx), DiffractionModel::UTD);
+  ASSERT_GT(fwd, 0.0);
+  ASSERT_GT(rev, 0.0);
+  EXPECT_NEAR(fwd, rev, 1e-6);
+  // determinism
+  EXPECT_EQ(fwd, sceneDiffractionLoss(doublyObstructedScene(tx, rx),
+                                      DiffractionModel::UTD));
+}
+
+// GATE — SINGLE-OBSTRUCTION UNCHANGED: for a single wall a clearing edge exists
+// (SingleEdge yields a diffracted path), so found==true and UTD stays on the
+// Phase-1 single-wedge path — the multi-edge branch never fires. The UTD loss
+// tracks the knife edge (Phase-1 behaviour) and is deterministic.
+TEST(UtdWedgePhase2, SceneSingleObstructionStaysSingleWedge) {
+  const Vec3 tx{-60, 0, 5}, rx{60, 0, 5};
+  // A clearing single edge exists for the single wall (the top edge):
+  EXPECT_TRUE(hasDiffractionPath(wallScene(8.0, tx, rx),
+                                 DiffractionModel::SingleEdge));
+  const double utd =
+      sceneDiffractionLoss(wallScene(8.0, tx, rx), DiffractionModel::UTD);
+  const double knife =
+      sceneDiffractionLoss(wallScene(8.0, tx, rx), DiffractionModel::SingleEdge);
+  ASSERT_GT(utd, 0.0);
+  EXPECT_NEAR(utd, knife, 1.0);  // still the single-wedge (~knife) loss
+  // byte-identical across reruns (single-wedge path untouched by Phase 2).
+  EXPECT_EQ(utd, sceneDiffractionLoss(wallScene(8.0, tx, rx),
+                                      DiffractionModel::UTD));
 }
 
 }  // namespace

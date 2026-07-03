@@ -109,10 +109,16 @@ idiomatic **Swift package** (`bindings/swift/`, throwing + value types + RAII) s
 API — authored to the C ABI and UNVERIFIED here (no Swift toolchain on this host), to be validated
 where Swift is available.
 
+The **UTD diffraction model is geometry-driven** (`utd-wedge-path`): per-edge wedge-angle extraction
+from the mesh dihedral (90° corner → `n = 1.5`, free edge → half-plane `n = 2`), loss from the
+Kouyoumjian–Pathak wedge coefficient with spherical spreading, and an additive UTD Deygout cascade over
+the terrain profile for doubly-obstructed links. It reduces to the ITU-R knife edge in the half-plane
+limit and is validated by reciprocity, shadow-boundary continuity, and monotonic shadowing; knife-edge
+remains the default so archived non-UTD results are unchanged.
+
 **Known gaps / not yet built:** batching the remaining per-ray query sites
 (image-method reflection segments, `buildTerrainProfile` down-rays, diffraction edges) for
-traversal-heavy scenes; general multi-edge/wedge UTD path model
-(current UTD reuses the dominant-edge v as a half-plane); CLI tools
+traversal-heavy scenes; CLI tools
 (`rftrace-cli`, `scene-validator`, `result-converter`).
 
 **Continuous integration** (`.github/workflows/ci.yml`) builds the default C++ core and the C API
