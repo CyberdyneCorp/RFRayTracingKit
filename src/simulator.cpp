@@ -20,6 +20,7 @@
 #include "rftrace/rf/doppler.hpp"
 #include "rftrace/rf/reflection.hpp"
 #include "rftrace/rf/utd.hpp"
+#include "rftrace/rf/utd_geometry.hpp"
 
 namespace rftrace {
 namespace detail {
@@ -203,9 +204,43 @@ std::vector<std::pair<Vec3, Vec3>> boundaryEdges(
   return edges;
 }
 
+// Edge -> incident-faces map used ONLY by the geometry-driven UTD path: for each
+// triangle edge, record the opposite vertex (the vertex NOT on the edge) of the
+// incident face. A free edge maps to one vertex (half-plane, n = 2); a shared
+// edge to two (candidate wedge). Built lazily inside the UTD branch so the
+// default knife-edge / Bullington / Deygout selection is byte-for-byte unchanged.
+using EdgeFaceMap = std::map<EdgeKey, std::vector<Vec3>>;
+
+EdgeFaceMap buildEdgeFaceMap(const std::vector<Triangle>& tris) {
+  static constexpr int kEdge[3][2] = {{0, 1}, {1, 2}, {2, 0}};
+  static constexpr int kOpp[3] = {2, 0, 1};  // vertex opposite each edge
+  EdgeFaceMap m;
+  for (const Triangle& t : tris) {
+    const Vec3 v[3] = {t.v0, t.v1, t.v2};
+    for (int ei = 0; ei < 3; ++ei)
+      m[makeEdgeKey(v[kEdge[ei][0]], v[kEdge[ei][1]])].push_back(v[kOpp[ei]]);
+  }
+  return m;
+}
+
+// True when the two incident faces of a shared edge are (near) coplanar — a mesh
+// diagonal or flat sheet, not a diffracting wedge. Uses the edge tangent and the
+// two opposite vertices, independent of triangle winding / normal orientation.
+bool sharedEdgeIsCoplanar(const Vec3& a, const Vec3& b, const Vec3& c0,
+                          const Vec3& c1) {
+  const Vec3 e = b - a;
+  const Vec3 n0 = e.cross(c0 - a);
+  const Vec3 n1 = e.cross(c1 - a);
+  const double denom = n0.norm() * n1.norm();
+  if (denom <= 0.0) return true;  // degenerate -> treat as no wedge
+  return n0.cross(n1).norm() <= 1e-9 * denom;
+}
+
 struct EdgeCandidate {
   double v = 0.0;
   Vec3 point{0, 0, 0};
+  Vec3 a{0, 0, 0};  ///< chosen edge endpoints, for UTD wedge-face lookup
+  Vec3 b{0, 0, 0};
 };
 
 // Fresnel parameter v (> 0) and diffraction point for a detour over edge [a,b],
@@ -226,7 +261,30 @@ std::optional<EdgeCandidate> evaluateEdge(const IBackend& backend,
   const Ray s2 = segmentRay(point, rx, kEps);
   if (s1.tMax <= s1.tMin || s2.tMax <= s2.tMin) return std::nullopt;
   if (backend.occluded(s1) || backend.occluded(s2)) return std::nullopt;
-  return EdgeCandidate{v, point};
+  return EdgeCandidate{v, point, a, b};
+}
+
+// Geometry-driven single-wedge UTD loss (dB) for the chosen edge: look up its
+// incident faces, extract the wedge geometry (n, phi, phiPrime, beta0, s, s')
+// and evaluate rf::utdWedgePathLossDb. Falls back to the fixed-geometry
+// half-plane reference rf::utdDiffractionLossDb(v) for a free edge whose faces
+// are missing or a degenerate/invalid extraction, so the result is always finite.
+double utdEdgeLossDb(const EdgeFaceMap& faces, const Vec3& a, const Vec3& b,
+                     const Vec3& q, const Vec3& tx, const Vec3& rx, double v,
+                     double k) {
+  const auto it = faces.find(makeEdgeKey(a, b));
+  if (it == faces.end() || it->second.empty())
+    return rf::utdDiffractionLossDb(v);
+
+  std::optional<Vec3> c1;
+  if (it->second.size() >= 2) c1 = it->second[1];
+  const rf::WedgeGeometry g =
+      rf::extractWedgeGeometry(a, b, q, tx, rx, it->second[0], c1);
+  if (!g.valid) return rf::utdDiffractionLossDb(v);
+
+  const double loss =
+      rf::utdWedgePathLossDb(g.phi, g.phiPrime, g.beta0, g.n, k, g.s, g.sPrime);
+  return std::isfinite(loss) ? loss : rf::utdDiffractionLossDb(v);
 }
 
 // Number of interior samples taken along the tx→rx horizontal baseline when
@@ -292,6 +350,8 @@ std::optional<RFPath> diffractionPath(const Scene& scene,
   if (frequencyHz <= 0.0) return std::nullopt;
   if ((rx.position - tx.position).norm() <= kEps) return std::nullopt;
   const double wavelength = constants::c / frequencyHz;
+  const bool utd =
+      ctx && ctx->settings.diffractionModel == DiffractionModel::UTD;
 
   // Dominant single edge = the strongest diffracted detour, i.e. the smallest
   // Fresnel parameter (least knife-edge loss) among valid silhouette edges.
@@ -306,6 +366,27 @@ std::optional<RFPath> diffractionPath(const Scene& scene,
       }
     }
   }
+
+  // UTD (single wedge, Phase 1) additionally considers SHARED non-coplanar edges
+  // — real building corners — which the default silhouette-edge selection skips.
+  // Gated on the UTD model so knife-edge / Bullington / Deygout candidate sets
+  // and results are untouched. Coplanar shared edges (mesh diagonals) are skipped.
+  EdgeFaceMap faces;
+  if (utd) {
+    faces = buildEdgeFaceMap(scene.triangles());
+    for (const auto& [key, opp] : faces) {
+      if (opp.size() != 2) continue;  // only genuine shared edges here
+      const Vec3 a{key[0], key[1], key[2]}, b{key[3], key[4], key[5]};
+      if (sharedEdgeIsCoplanar(a, b, opp[0], opp[1])) continue;
+      if (auto c = evaluateEdge(backend, tx.position, rx.position, a, b,
+                                wavelength)) {
+        if (!found || c->v < best.v) {
+          found = true;
+          best = *c;
+        }
+      }
+    }
+  }
   if (!found) return std::nullopt;
 
   RFPath p;
@@ -314,8 +395,11 @@ std::optional<RFPath> diffractionPath(const Scene& scene,
   p.type = PathType::Diffraction;
   p.diffractions = 1;
   p.points = {tx.position, best.point, rx.position};
-  const double loss = diffractionLossDb(backend, tx.position, rx.position,
-                                        best.v, wavelength, ctx);
+  const double loss =
+      utd ? utdEdgeLossDb(faces, best.a, best.b, best.point, tx.position,
+                          rx.position, best.v, constants::two_pi / wavelength)
+          : diffractionLossDb(backend, tx.position, rx.position, best.v,
+                              wavelength, ctx);
   finishPath(p, tx, rx, loss, ctx);
   return p;
 }
