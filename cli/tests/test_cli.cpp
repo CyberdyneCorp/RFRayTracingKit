@@ -11,6 +11,12 @@
 #include <sstream>
 #include <string>
 
+#if defined(_WIN32)
+#include <process.h>  // _getpid
+#else
+#include <unistd.h>  // getpid
+#endif
+
 #include "cli_common.hpp"
 
 using namespace rftrace::cli;
@@ -160,9 +166,20 @@ namespace {
 
 std::atomic<int> g_counter{0};
 
+#if defined(_WIN32)
+inline long processId() { return _getpid(); }
+#else
+inline long processId() { return static_cast<long>(getpid()); }
+#endif
+
+// Unique temp path. The counter makes names unique WITHIN a process; the pid
+// makes them unique ACROSS processes — `ctest -j` runs each test in a separate
+// process (all resetting the counter to 0) sharing TempDir(), so without the pid
+// parallel processes would collide on the same file and clobber each other's
+// captured output.
 std::string tmp(const std::string& name) {
-  return std::string(testing::TempDir()) + "cli_" +
-         std::to_string(g_counter.fetch_add(1)) + "_" + name;
+  return std::string(testing::TempDir()) + "cli_" + std::to_string(processId()) +
+         "_" + std::to_string(g_counter.fetch_add(1)) + "_" + name;
 }
 
 void writeFile(const std::string& path, const std::string& content) {
