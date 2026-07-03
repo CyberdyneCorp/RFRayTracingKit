@@ -88,12 +88,16 @@ kernel). RF physics stays backend-agnostic — Metal only accelerates traversal.
 - Build/run: `just metal` (configures `build-metal` with the flag and runs its ctest). Metal
   is not part of the default `ci` recipe.
 
-> Note: the image-method simulator still issues per-ray queries, so selecting a GPU backend as
-> the *simulator* backend is correct but not yet faster than CPU. The batched query API — now
-> including the zero-allocation caller-owned-output forms (`closestHitBatchInto` /
-> `occludedBatchInto`) — is the foundation for a batched simulator path (the next roadmap step
-> for the GPU backends). Today Metal, CUDA (verified on an RTX 5060), and OpenCL are validated,
-> batch-capable traversal backends.
+> Note: the simulator now issues **batched** backend queries for its independent-ray stages —
+> line-of-sight occlusion (across all receivers/coverage cells) and the ray-launch wavefront
+> (`closestHit` batched per bounce across live rays) — via the caller-owned-output API
+> (`closestHitBatchInto` / `occludedBatchInto`), so a whole run's traversal collapses to a handful
+> of device dispatches instead of per-ray host↔device round trips (verified on an RTX 5060 with a
+> CPU-vs-CUDA coverage-agreement test). Measured end-to-end, however, full-run wall time is
+> dominated by CPU-side path processing (capture/dedup, RF physics, aggregation) and per-run
+> backend construction — not ray traversal — so GPU vs CPU is roughly break-even for these scenes;
+> further full-run speedup is a CPU-side concern (threading, capture spatial index, backend reuse).
+> Today Metal, CUDA (verified on an RTX 5060), and OpenCL are validated, batch-capable backends.
 
 ## OpenCL GPU backend
 
@@ -225,9 +229,12 @@ GDAL/Parquet-gated functions are present only when the extension is built with t
 `rf.gdal_available()` / `rf.parquet_available()` probe at runtime. Build all optional IO with
 `just io` (GDAL + Parquet + libosmium).
 
-Not yet built: a batched simulator path so GPU backends accelerate a full run (the loops are
-still per-ray), a general multi-edge/wedge UTD path model (the current selectable UTD reuses the
-dominant edge as a half-plane), an Embree adapter, CLI tools, Swift/C bindings, and a CI
+Not yet built: CPU-side full-run acceleration (the batched simulator path removed per-ray
+host↔device round trips, but full-run time is now CPU-bound on capture/dedup + RF physics —
+threading, a capture spatial index, and backend reuse are the next levers); batching the remaining
+per-ray sites (image-method reflection segments, diffraction edges, terrain probes) for
+traversal-heavy scenes; a general multi-edge/wedge UTD path model (the current selectable UTD
+reuses the dominant edge as a half-plane); an Embree adapter, CLI tools, Swift/C bindings, and a CI
 workflow. See `openspec/project.md` for the full roadmap.
 
 ## Building
