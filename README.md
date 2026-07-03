@@ -315,6 +315,31 @@ See `examples/simple_los` (line-of-sight link budget), `examples/city_reflection
 (LOS + specular reflection off a wall), and `examples/coverage_grid` (coverage-grid mode
 with CSV/JSON/GeoJSON export).
 
+## Command-line tools
+
+Three front-end executables (behind `RFTRACE_BUILD_CLI`, default ON) expose the
+load → simulate → export flow to the shell — no new dependency, `rftrace::rftrace`
+only. Build + smoke-test them with `just cli`.
+
+```bash
+# Point run → JSON, coverage run → CSV
+rftrace-cli --tx 0,0,10 --rx 50,0,1.5 --out result.json
+rftrace-cli --scene city.obj --tx 5,5,20 --grid -50,-50,5,40,40,1.5 --out cov.csv
+
+# Validate a scene; convert a result
+rftrace-scene-validator city.obj
+rftrace-result-converter --in result.json --out result.csv
+```
+
+- `rftrace-cli` — scene load (mesh/GeoJSON/CityJSON/OSM), point/coverage/route
+  runs, settings from flags, output format inferred from the `--out` extension.
+- `rftrace-scene-validator` — summary + degenerate/empty/bad-material detection
+  (non-zero exit when invalid).
+- `rftrace-result-converter` — point-result JSON → CSV/GeoJSON/glTF/JSON.
+
+All tools return `0` on success and non-zero with an `error:` message on bad
+input or an unavailable optional feature (GeoTIFF/Parquet). See `cli/README.md`.
+
 ## Coordinate convention
 
 The core uses a right-handed **Z-up** frame (Z = height/elevation), matching GIS/Cesium

@@ -116,10 +116,16 @@ the terrain profile for doubly-obstructed links. It reduces to the ITU-R knife e
 limit and is validated by reciprocity, shadow-boundary continuity, and monotonic shadowing; knife-edge
 remains the default so archived non-UTD results are unchanged.
 
+**Command-line tools** (`cli/`, behind `RFTRACE_BUILD_CLI`, default ON): `rftrace-cli`
+(load → simulate → export: point/coverage/route runs, scene-format detection, output format from
+extension), `rftrace-scene-validator` (summary + degenerate/empty/bad-material detection), and
+`rftrace-result-converter` (point-result JSON → CSV/GeoJSON/glTF). They consume only the public API,
+link `rftrace::rftrace`, add no third-party dependency (in-tree arg parser), and probe optional-feature
+availability (GDAL/Arrow/osmium) with clear errors and correct exit codes. See `cli/README.md`.
+
 **Known gaps / not yet built:** batching the remaining per-ray query sites
 (image-method reflection segments, `buildTerrainProfile` down-rays, diffraction edges) for
-traversal-heavy scenes; CLI tools
-(`rftrace-cli`, `scene-validator`, `result-converter`).
+traversal-heavy scenes.
 
 **Continuous integration** (`.github/workflows/ci.yml`) builds the default C++ core and the C API
 (`RFTRACE_ENABLE_C_API=ON`) on every push/PR — Ubuntu + clang, vcpkg with a cached binary store — and

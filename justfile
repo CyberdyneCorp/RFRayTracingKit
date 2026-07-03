@@ -65,6 +65,17 @@ examples: build
 example NAME: build
     ./{{build_dir}}/examples/rftrace_{{NAME}}
 
+# Build the CLI tools and smoke-test each (--help must exit 0).
+cli: build
+    #!/usr/bin/env bash
+    set -uo pipefail
+    fail=0
+    for t in rftrace-cli rftrace-scene-validator rftrace-result-converter; do
+      if ./{{build_dir}}/cli/$t --help >/dev/null 2>&1; then echo "✅ $t --help";
+      else echo "❌ $t --help"; fail=1; fi
+    done
+    exit $fail
+
 # Configure + build + test with debug symbols and assertions (separate dir).
 debug:
     cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER={{cxx}} \
@@ -213,8 +224,8 @@ py-test: py-build
 spec:
     openspec validate --all --strict
 
-# Full local CI: clang tests + gcc + asan + spec + examples.
-ci: test gcc asan spec examples
+# Full local CI: clang tests + gcc + asan + spec + examples + cli.
+ci: test gcc asan spec examples cli
 
 # Install the library + headers to a prefix (default ./_install).
 install prefix="_install": build

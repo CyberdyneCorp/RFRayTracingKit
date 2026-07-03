@@ -21,6 +21,7 @@ endif()
 # ---- Options -----------------------------------------------------------------
 option(RFTRACE_BUILD_TESTS    "Build the test suite"          ON)
 option(RFTRACE_BUILD_EXAMPLES "Build the example programs"    ON)
+option(RFTRACE_BUILD_CLI      "Build the CLI tools"           ON)
 option(RFTRACE_ENABLE_PYTHON  "Build the Python bindings"     OFF)
 option(RFTRACE_ENABLE_C_API   "Build the C API (librftrace_c)" OFF)
 option(RFTRACE_ENABLE_METAL   "Enable the Metal backend"      OFF)
@@ -248,6 +249,14 @@ endif()
 # ---- Examples ----------------------------------------------------------------
 if(RFTRACE_BUILD_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+# ---- CLI tools ---------------------------------------------------------------
+# Three front-end executables (rftrace-cli, rftrace-scene-validator,
+# rftrace-result-converter) that consume only the public API. Behind
+# RFTRACE_BUILD_CLI (default ON); flag-off leaves the build + suite unchanged.
+if(RFTRACE_BUILD_CLI)
+  add_subdirectory(cli)
 endif()
 
 # ---- Python bindings ---------------------------------------------------------
