@@ -28,5 +28,5 @@
 
 ## 5. Docs & archive
 
-- [ ] 5.1 Update `include/rftrace/rf/utd.hpp` docs and add a short note in the RF section of the README on the geometry-driven UTD path model + its validation properties.
-- [ ] 5.2 Update `openspec/project.md` (general multi-edge/wedge UTD moved from not-built to done). Run `openspec validate --strict` and archive the change (syncing the modified `utd-diffraction` requirement + the new `utd-wedge-path` capability).
+- [x] 5.1 Update `include/rftrace/rf/utd.hpp` docs and add a short note in the RF section of the README on the geometry-driven UTD path model + its validation properties.
+- [x] 5.2 Update `openspec/project.md` (general multi-edge/wedge UTD moved from not-built to done). Run `openspec validate --strict` and archive the change (syncing the modified `utd-diffraction` requirement + the new `utd-wedge-path` capability).

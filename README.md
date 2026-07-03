@@ -239,10 +239,15 @@ A **C API** (`librftrace_c`, a stable no-throw `extern "C"` ABI behind `RFTRACE_
 C API is C-tested and ASan-clean; the Swift package is authored to the C ABI and unverified where no
 Swift toolchain exists.
 
+The UTD diffraction model is now **geometry-driven**: it extracts the real wedge angle from the mesh
+dihedral at the diffracting edge (a 90° building corner → `n = 1.5`; a free edge → half-plane `n = 2`),
+computes loss from the Kouyoumjian–Pathak wedge coefficient with spherical spreading, and (additively,
+for doubly-obstructed links) cascades UTD over the terrain profile. It reduces to the ITU-R knife edge
+in the half-plane limit and is validated by reciprocity, shadow-boundary continuity, and monotonic
+shadowing; knife-edge remains the default.
+
 Not yet built: batching the remaining per-ray sites (image-method reflection segments, diffraction
-edges, terrain probes) for
-traversal-heavy scenes; a general multi-edge/wedge UTD path model (the current selectable UTD
-reuses the dominant edge as a half-plane); and CLI tools. See
+edges, terrain probes) for traversal-heavy scenes; and CLI tools. See
 `openspec/project.md` for the full roadmap.
 
 Continuous integration (`.github/workflows/ci.yml`) builds the default C++ core and the C API on
