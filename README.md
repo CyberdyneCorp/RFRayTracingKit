@@ -148,9 +148,13 @@ the device buffers).
 - **Benchmark**: `rftrace_cuda_benchmark [triangles] [rays] [seed]` (example target) times CPU vs
   CUDA for `build()`, `closestHitBatch()`, and `occludedBatch()` on a procedural city, with a
   correctness cross-check. On an RTX 5060 (OptiX 9.0.0) over 1M rays: a 1M-triangle scene gives
-  ≈**450×** closest-hit and ≈**54×** occlusion speedup (100% hit/miss agreement); GPU throughput is
-  batch-transfer-bound (~23 Mray/s incl. per-call H2D/D2H), and the closest-hit speedup grows with
-  scene size as the CPU BVH slows. It runs CPU-only when no GPU is present.
+  ≈**450×** closest-hit and ≈**54×** occlusion speedup (100% hit/miss agreement), and the closest-hit
+  speedup grows with scene size as the CPU BVH slows. It runs CPU-only when no GPU is present.
+- **Query buffers are pooled**: the per-query device ray/hit buffers are reused across dispatches
+  (grown on demand), so a steady batch size allocates once. At these batch sizes GPU throughput
+  (~23 Mray/s) is bound by fixed per-call overhead — host double→float marshalling and the
+  synchronous launch — not device allocation (measured ~0.19 ms/1M-ray call) or transfer (~4 ms);
+  pinned host staging + stream overlap is the next lever if the per-call path is ever hot.
 
 > **Verified on NVIDIA hardware.** The backend and its parity suite have been compiled and run on
 > an NVIDIA GeForce RTX 5060 (Blackwell, `sm_120`) — CUDA Toolkit 12.0, driver 580.95.05, **OptiX
