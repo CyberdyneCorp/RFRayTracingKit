@@ -19,6 +19,10 @@
     "parquet": {
       "description": "Parquet receiver-table export (RFTRACE_ENABLE_PARQUET)",
       "dependencies": [{"name": "arrow", "features": ["parquet"]}]
+    },
+    "embree": {
+      "description": "Optional Embree CPU ray-tracing backend (RFTRACE_ENABLE_EMBREE)",
+      "dependencies": ["embree"]
     }
   }
 }

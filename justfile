@@ -88,12 +88,13 @@ asan:
     cmake --build build-asan
     ./build-asan/tests/rftrace_tests
 
-# Build with the optional Embree CPU backend and run the suite (validation baseline).
+# Build with the optional Embree CPU backend and run the suite (validation
+# baseline). Includes the CPU-vs-Embree parity suite (test_embree_parity.cpp).
 embree:
     cmake -S . -B build-embree -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER={{cxx}} \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_EMBREE=ON
     cmake --build build-embree
-    ./build-embree/tests/rftrace_tests
+    ctest --test-dir build-embree --output-on-failure
 
 # Build with the Metal GPU backend and run its suite (Apple + Metal only).
 # Not part of `ci`; tests skip at runtime when no Metal device is present.

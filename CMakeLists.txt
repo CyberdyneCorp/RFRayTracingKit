@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.25)
+
+# Auto-enable the vcpkg manifest feature that pulls Embree when the backend is
+# requested. Must run before project() so the vcpkg toolchain (invoked at the
+# first project() call) installs the feature's dependency. -DRFTRACE_ENABLE_EMBREE
+# is available here as a cache variable when passed on the command line.
+if(RFTRACE_ENABLE_EMBREE)
+  list(APPEND VCPKG_MANIFEST_FEATURES "embree")
+endif()
+
 project(RFTraceKit VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -72,8 +81,11 @@ target_link_libraries(rftrace
 
 if(RFTRACE_ENABLE_EMBREE)
   find_package(embree 4 CONFIG REQUIRED)
+  target_sources(rftrace PRIVATE src/backends/embree/embree_backend.cpp)
   target_link_libraries(rftrace PRIVATE embree)
-  target_compile_definitions(rftrace PRIVATE RFTRACE_HAVE_EMBREE=1)
+  # PUBLIC so the tests target sees it for the parity test's #if guard, mirroring
+  # the CUDA/OpenCL/Metal blocks. The Embree include/link stay PRIVATE.
+  target_compile_definitions(rftrace PUBLIC RFTRACE_HAVE_EMBREE=1)
 endif()
 
 # ---- GDAL (GeoTIFF/DEM import + heatmap export) ------------------------------

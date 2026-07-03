@@ -242,7 +242,7 @@ Swift toolchain exists.
 Not yet built: batching the remaining per-ray sites (image-method reflection segments, diffraction
 edges, terrain probes) for
 traversal-heavy scenes; a general multi-edge/wedge UTD path model (the current selectable UTD
-reuses the dominant edge as a half-plane); an Embree adapter; and CLI tools. See
+reuses the dominant edge as a half-plane); and CLI tools. See
 `openspec/project.md` for the full roadmap.
 
 Continuous integration (`.github/workflows/ci.yml`) builds the default C++ core and the C API on
