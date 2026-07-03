@@ -177,6 +177,74 @@ cuda-local:
     cmake --build build-cuda -j
     ctest --test-dir build-cuda --output-on-failure
 
+# Best-effort probe (no build; Linux, macOS, Windows): recommends the matching
+# build recipe, falling back to the always-available CPU backend. On Windows run
+# it from Git Bash / MSYS2 / WSL (where `just` finds bash on PATH).
+# Detect usable GPU backends on this host (CUDA / OpenCL / Metal), or CPU-only.
+gpu-detect:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    os=$(uname -s); arch=$(uname -m)
+    case "$os" in
+      MINGW*|MSYS*|CYGWIN*) plat=Windows ;;
+      Darwin)               plat=macOS   ;;
+      Linux)                plat=Linux   ;;
+      *)                    plat="$os"   ;;
+    esac
+    echo "Host: $plat ($os $arch)"
+    echo
+
+    cuda=no; opencl=no; metal=no
+
+    # --- CUDA / OptiX (NVIDIA) — needs the driver at runtime; nvcc to build ----
+    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+      gpu=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+      drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+      nvcc=$(command -v nvcc >/dev/null 2>&1 && nvcc --version | grep -oE 'release [0-9.]+' | head -1 || echo "toolkit not found")
+      echo "✅ CUDA   : ${gpu:-NVIDIA GPU} (driver ${drv:-?}, ${nvcc})"
+      cuda=yes
+    else
+      echo "❌ CUDA   : no NVIDIA driver (nvidia-smi) detected"
+    fi
+
+    # --- OpenCL — clinfo if present, else probe the ICD loader / framework -----
+    if command -v clinfo >/dev/null 2>&1; then
+      n=$(clinfo -l 2>/dev/null | grep -ciE 'device|platform' || true)
+      if [ "${n:-0}" -gt 0 ]; then
+        dev=$(clinfo -l 2>/dev/null | grep -iE 'device' | head -1 | sed 's/^[[:space:]]*//')
+        echo "✅ OpenCL : ${dev:-device present} (clinfo)"; opencl=yes
+      else
+        echo "❌ OpenCL : clinfo found no devices"
+      fi
+    elif [ "$plat" = macOS ] && [ -d /System/Library/Frameworks/OpenCL.framework ]; then
+      echo "✅ OpenCL : Apple OpenCL.framework present (install clinfo for details)"; opencl=yes
+    elif [ "$plat" = Windows ] && { [ -f /c/Windows/System32/OpenCL.dll ] || reg query "HKLM\\SOFTWARE\\Khronos\\OpenCL\\Vendors" >/dev/null 2>&1; }; then
+      echo "✅ OpenCL : Windows OpenCL ICD present (install clinfo to enumerate devices)"; opencl=yes
+    elif ls /etc/OpenCL/vendors/*.icd >/dev/null 2>&1 || ldconfig -p 2>/dev/null | grep -q libOpenCL; then
+      echo "✅ OpenCL : ICD loader present (install clinfo to enumerate devices)"; opencl=yes
+    else
+      echo "❌ OpenCL : no ICD loader / OpenCL runtime detected"
+    fi
+
+    # --- Metal (Apple GPU) — Apple platforms only ------------------------------
+    if [ "$plat" = macOS ]; then
+      dev=$(system_profiler SPDisplaysDataType 2>/dev/null | grep -iE 'Chipset Model|Metal' | head -1 | sed 's/^[[:space:]]*//')
+      if [ -d /System/Library/Frameworks/Metal.framework ]; then
+        echo "✅ Metal  : ${dev:-Metal framework present}"; metal=yes
+      else
+        echo "❌ Metal  : Metal.framework not found"
+      fi
+    else
+      echo "❌ Metal  : Apple platforms only"
+    fi
+
+    echo
+    if [ "$cuda" = yes ]; then rec="CUDA/OptiX  →  just cuda-local   (or: just cuda)"
+    elif [ "$metal" = yes ]; then rec="Metal       →  just metal"
+    elif [ "$opencl" = yes ]; then rec="OpenCL      →  just opencl"
+    else rec="CPU only    →  just build   (portable C++ BVH; always available)"; fi
+    echo "Recommended: $rec"
+
 # --- C API (stable extern "C" ABI) -------------------------------------------
 # Configure + build librftrace_c and run the C test (compiled as C) through
 # CTest. Behind RFTRACE_ENABLE_C_API so the default build is unchanged.

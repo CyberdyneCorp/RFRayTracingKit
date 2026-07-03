@@ -55,7 +55,7 @@ from .route import Route, RouteResult
 from .scene import Receiver, Scene, SceneError, Transmitter
 from .simulator import CoverageGrid, Simulator, SimulationSettings, make_grid
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     # scene / entities
