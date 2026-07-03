@@ -20,9 +20,9 @@
 
 ## 4. Phase 3 — Backend reuse across runs
 
-- [ ] 4.1 Add an internal `Simulator` backend cache keyed by a scene fingerprint (triangle-buffer identity/hash); rebuild on change.
-- [ ] 4.2 Route `run`/`runCoverage`/`runRoute` through the cache so repeated runs on one scene skip the acceleration-structure rebuild.
-- [ ] 4.3 Test: repeated runs on one scene reuse the backend (build once) with identical results; a scene change invalidates and rebuilds.
+- [x] 4.1 Add an internal `Simulator` backend cache keyed by a scene fingerprint (FNV-1a/64 content hash over triangle bytes + count, so in-place edits invalidate); rebuild on change. Adds observational `backendRebuildCount()`.
+- [x] 4.2 Route `run`/`runCoverage`/`runRoute` through `ensureBackend(scene)` so repeated runs on one scene skip the acceleration-structure rebuild.
+- [x] 4.3 Test (`tests/test_phase3_backend_reuse.cpp`): repeated run/runCoverage/runRoute on one scene reuse the backend (count==1) with identical results; a triangle-count change AND an equal-count/different-coordinate change invalidate and rebuild; reused output matches a fresh per-call build bit-for-bit. Full suite green (252 tests).
 
 ## 5. Validation & docs
 

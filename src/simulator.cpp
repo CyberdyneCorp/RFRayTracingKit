@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <map>
 #include <optional>
 #include <utility>
@@ -387,9 +389,59 @@ ReceiverResult evaluatePointReceiver(const Scene& scene, IBackend& backend,
 
 }  // namespace detail
 
+namespace {
+
+/// FNV-1a/64 content hash over a triangle soup: folds the triangle COUNT then
+/// every coordinate of every triangle by its IEEE-754 bits (component-wise so it
+/// is padding-agnostic). Pure function of the geometry payload — never of the
+/// vector's address, capacity, or identity — so any coordinate or count change
+/// flips the key while an unchanged scene keeps it. O(triangles), far cheaper
+/// than building a BVH/OptiX GAS, so it is a net win for repeated runs.
+std::uint64_t geometryKey(const std::vector<Triangle>& tris) {
+  constexpr std::uint64_t kOffset = 1469598103934665603ull;
+  constexpr std::uint64_t kPrime = 1099511628211ull;
+  auto foldU64 = [](std::uint64_t h, std::uint64_t v) {
+    for (int b = 0; b < 8; ++b) {
+      h ^= (v >> (b * 8)) & 0xffu;
+      h *= kPrime;
+    }
+    return h;
+  };
+  auto foldDouble = [&](std::uint64_t h, double d) {
+    std::uint64_t bits;
+    std::memcpy(&bits, &d, sizeof bits);
+    return foldU64(h, bits);
+  };
+  std::uint64_t h = kOffset;
+  h = foldU64(h, static_cast<std::uint64_t>(tris.size()));  // count in the key
+  for (const Triangle& t : tris)
+    for (const Vec3* v : {&t.v0, &t.v1, &t.v2}) {
+      h = foldDouble(h, v->x());
+      h = foldDouble(h, v->y());
+      h = foldDouble(h, v->z());
+    }
+  return h;
+}
+
+}  // namespace
+
+IBackend& Simulator::ensureBackend(const Scene& scene) const {
+  const std::vector<Triangle>& tris = scene.triangles();
+  const std::uint64_t key = geometryKey(tris);
+  // Validity requires a cached backend AND a key match, so a legitimate key of 0
+  // never causes a false reuse.
+  if (cachedBackend_ && cachedKey_ == key) return *cachedBackend_;
+  std::unique_ptr<IBackend> backend =
+      makeBackend(settings_.backend, settings_.allowBackendFallback);
+  backend->build(tris);
+  cachedBackend_ = std::move(backend);
+  cachedKey_ = key;
+  ++backendRebuildCount_;
+  return *cachedBackend_;
+}
+
 RFResult Simulator::run(const Scene& scene) const {
-  auto backend = makeBackend(settings_.backend, settings_.allowBackendFallback);
-  backend->build(scene.triangles());
+  IBackend* backend = &ensureBackend(scene);
 
   RFResult result;
   result.simulationId = settings_.simulationId;
@@ -663,8 +715,7 @@ void fillCoverageImageMethod(const Scene& scene, IBackend& backend,
 
 CoverageResult Simulator::runCoverage(const Scene& scene,
                                       const CoverageGrid& grid) const {
-  auto backend = makeBackend(settings_.backend, settings_.allowBackendFallback);
-  backend->build(scene.triangles());
+  IBackend* backend = &ensureBackend(scene);
 
   CoverageResult cov;
   cov.grid = grid;
@@ -736,8 +787,7 @@ double fillPathDoppler(std::vector<RFPath>& paths, const Vec3& velocity,
 }  // namespace
 
 RouteResult Simulator::runRoute(const Scene& scene, const Route& route) const {
-  auto backend = makeBackend(settings_.backend, settings_.allowBackendFallback);
-  backend->build(scene.triangles());
+  IBackend* backend = &ensureBackend(scene);
 
   RouteResult out;
   out.routeId = route.id;

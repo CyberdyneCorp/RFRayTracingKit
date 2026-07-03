@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 
 #include "rftrace/backend.hpp"
@@ -118,8 +120,33 @@ class Simulator {
   /// enabled). Deterministic in the same way as run().
   RouteResult runRoute(const Scene& scene, const Route& route) const;
 
+  /// Number of times this Simulator has (re)built its acceleration backend.
+  /// Repeated runs on an unchanged scene keep this at 1; it increments whenever
+  /// the scene geometry changes and the backend is rebuilt. Observational only.
+  std::size_t backendRebuildCount() const { return backendRebuildCount_; }
+
  private:
+  /// Return the built acceleration backend for `scene`, reusing the cached one
+  /// when the scene geometry is unchanged and rebuilding otherwise.
+  ///
+  /// The cache key is a content hash of the scene's triangle geometry plus the
+  /// triangle count, so ANY geometry change — including an in-place edit that
+  /// keeps the same triangle-vector address and size — invalidates the cache and
+  /// triggers a rebuild. The backend KIND is fixed per Simulator via settings_,
+  /// so it is deliberately NOT part of the key.
+  ///
+  /// Not thread-safe: the cache is touched exactly once, serially, at the top of
+  /// each run method (before any parallel region), so it never interacts with
+  /// in-run parallelism. Concurrent run/runCoverage/runRoute calls on ONE
+  /// Simulator instance are unsupported, matching prior behavior. The cache holds
+  /// the built structure for the Simulator's lifetime (traded for reuse).
+  IBackend& ensureBackend(const Scene& scene) const;
+
   SimulationSettings settings_;
+
+  mutable std::unique_ptr<IBackend> cachedBackend_;  ///< built acceleration structure
+  mutable std::uint64_t cachedKey_ = 0;              ///< content hash of cached scene geometry
+  mutable std::size_t backendRebuildCount_ = 0;      ///< # times build() was invoked
 };
 
 }  // namespace rftrace
