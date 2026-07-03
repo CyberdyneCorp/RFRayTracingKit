@@ -30,6 +30,7 @@
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -185,31 +186,34 @@ class CudaBackend final : public IBackend {
     return occludedBatch({ray}).front() != 0;
   }
 
-  std::vector<Hit> closestHitBatch(
-      const std::vector<Ray>& rays) const override {
-    std::vector<Hit> out(rays.size());
-    if (rays.empty()) return out;
+  // Caller-owned-output primitives: write straight from the pinned hit buffer
+  // into `out`. Every slot is written (misses too) so a reused/dirty caller
+  // buffer stays correct — the vector-returning forms inherited from IBackend
+  // wrap these. This is the zero-output-allocation fast path.
+  void closestHitBatchInto(const std::vector<Ray>& rays,
+                           std::span<Hit> out) const override {
+    if (rays.empty()) return;
     const GpuHit* hits = dispatch(rays, /*occlusion=*/false);
     for (std::size_t i = 0; i < rays.size(); ++i) {
       const GpuHit& g = hits[i];
+      Hit& h = out[i];
+      h = Hit{};
       if (g.valid) {
-        out[i].valid = true;
-        out[i].t = g.t;
-        out[i].u = g.u;
-        out[i].v = g.v;
-        out[i].triangle = static_cast<int>(g.prim);
+        h.valid = true;
+        h.t = g.t;
+        h.u = g.u;
+        h.v = g.v;
+        h.triangle = static_cast<int>(g.prim);
       }
     }
-    return out;
   }
 
-  std::vector<char> occludedBatch(const std::vector<Ray>& rays) const override {
-    std::vector<char> out(rays.size(), 0);
-    if (rays.empty()) return out;
+  void occludedBatchInto(const std::vector<Ray>& rays,
+                         std::span<char> out) const override {
+    if (rays.empty()) return;
     const GpuHit* hits = dispatch(rays, /*occlusion=*/true);
     for (std::size_t i = 0; i < rays.size(); ++i)
       out[i] = hits[i].valid ? 1 : 0;
-    return out;
   }
 
   Backend kind() const override { return Backend::CUDA; }

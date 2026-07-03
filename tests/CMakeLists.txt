@@ -20,6 +20,7 @@ endif()
 
 add_executable(rftrace_tests
   test_geometry.cpp
+  test_backend_api.cpp
   test_bvh.cpp
   test_scene.cpp
   test_georef.cpp

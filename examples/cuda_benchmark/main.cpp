@@ -239,5 +239,32 @@ int main(int argc, char** argv) {
     std::printf("   occlusion agreement: %.3f%%",
                 100.0 * occAgree / rayCount);
   std::printf("\n");
+
+  // ---- caller-owned output (reused buffer) vs allocating, GPU only ----------
+  // The vector-returning closestHitBatch allocates a fresh ~40 MB result each
+  // call; closestHitBatchInto writes into a buffer the caller reuses. Average a
+  // few iterations to expose the steady-state difference.
+  if (gpu) {
+    constexpr int iters = 10;
+    auto ta = Clock::now();
+    for (int k = 0; k < iters; ++k) {
+      const std::vector<Hit> h = gpu->closestHitBatch(rays);
+      if (h.empty()) return 1;  // keep the call from being optimised away
+    }
+    const double allocT = secondsSince(ta) / iters;
+
+    std::vector<Hit> buf(rayCount);  // allocated once, reused every iteration
+    auto tb = Clock::now();
+    for (int k = 0; k < iters; ++k) gpu->closestHitBatchInto(rays, buf);
+    const double intoT = secondsSince(tb) / iters;
+
+    std::printf("\n---- caller-owned output (closest-hit, GPU, %d-iter avg) ----\n",
+                iters);
+    std::printf("allocating closestHitBatch     %8.4f s (%7.1f Mray/s)\n", allocT,
+                mraysPerSec(rayCount, allocT));
+    std::printf("reused-buffer closestHitBatchInto %8.4f s (%7.1f Mray/s)   %.1fx\n",
+                intoT, mraysPerSec(rayCount, intoT),
+                intoT > 0 ? allocT / intoT : 0.0);
+  }
   return 0;
 }

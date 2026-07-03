@@ -404,4 +404,39 @@ TEST(CudaParityScenes, DeterministicAcrossRuns) {
   EXPECT_EQ(oa, ob);
 }
 
+// The caller-owned-output fast path (closestHitBatchInto / occludedBatchInto)
+// must agree bit-for-bit with the vector-returning forms, and a reused buffer
+// carrying a prior batch's hits must be fully overwritten on the next batch.
+TEST(CudaParityScenes, CallerOwnedOutputMatchesVector) {
+  if (!cudaReady()) GTEST_SKIP() << "no CUDA device available";
+  auto gpu = makeBackend(Backend::CUDA, false);
+  const auto tris = makeRandomTriangles(300, 21);
+  gpu->build(tris);
+  const Box box = paddedBounds(tris);
+
+  const std::vector<Ray> rays = makeRandomRays(4000, 23, box);
+  const std::vector<Hit> ref = gpu->closestHitBatch(rays);
+  std::vector<Hit> into(rays.size());
+  gpu->closestHitBatchInto(rays, into);
+  ASSERT_EQ(into.size(), ref.size());
+  for (std::size_t i = 0; i < ref.size(); ++i) {
+    EXPECT_EQ(into[i].valid, ref[i].valid) << "ray " << i;
+    EXPECT_EQ(into[i].triangle, ref[i].triangle) << "ray " << i;
+    EXPECT_EQ(into[i].t, ref[i].t) << "ray " << i;
+  }
+
+  const std::vector<Ray> segs = makeRandomSegments(4000, 25, box);
+  const std::vector<char> occRef = gpu->occludedBatch(segs);
+  std::vector<char> occInto(segs.size());
+  gpu->occludedBatchInto(segs, occInto);
+  EXPECT_EQ(occInto, occRef);
+
+  // Reuse `into` (full of hits) for an all-miss batch: no slot may stay valid.
+  const std::vector<Ray> misses(rays.size(),
+                                Ray(Vec3(1e6, 1e6, 1e6), Vec3(0, 0, 1)));
+  gpu->closestHitBatchInto(misses, into);
+  for (std::size_t i = 0; i < into.size(); ++i)
+    EXPECT_FALSE(into[i].valid) << "stale hit at " << i;
+}
+
 #endif  // RFTRACE_HAVE_CUDA

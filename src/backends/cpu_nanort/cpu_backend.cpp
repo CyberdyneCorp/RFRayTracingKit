@@ -36,19 +36,31 @@ class CpuBackend final : public IBackend {
 
 }  // namespace
 
-// Default batched implementations: loop over the single-ray queries. Backends
-// that can dispatch a whole batch at once (Metal) override these.
+// Caller-owned-output forms are the batched primitive: the default loops over
+// the single-ray queries. Backends that can dispatch a whole batch at once
+// (Metal, CUDA) override these.
+void IBackend::closestHitBatchInto(const std::vector<Ray>& rays,
+                                   std::span<Hit> out) const {
+  for (std::size_t i = 0; i < rays.size(); ++i) out[i] = closestHit(rays[i]);
+}
+
+void IBackend::occludedBatchInto(const std::vector<Ray>& rays,
+                                 std::span<char> out) const {
+  for (std::size_t i = 0; i < rays.size(); ++i)
+    out[i] = occluded(rays[i]) ? 1 : 0;
+}
+
+// Vector-returning forms: allocate once, then delegate to the Into primitive so
+// a batch backend's single-dispatch override is used here too.
 std::vector<Hit> IBackend::closestHitBatch(const std::vector<Ray>& rays) const {
-  std::vector<Hit> hits;
-  hits.reserve(rays.size());
-  for (const Ray& ray : rays) hits.push_back(closestHit(ray));
+  std::vector<Hit> hits(rays.size());
+  closestHitBatchInto(rays, hits);
   return hits;
 }
 
 std::vector<char> IBackend::occludedBatch(const std::vector<Ray>& rays) const {
-  std::vector<char> flags;
-  flags.reserve(rays.size());
-  for (const Ray& ray : rays) flags.push_back(occluded(ray) ? 1 : 0);
+  std::vector<char> flags(rays.size());
+  occludedBatchInto(rays, flags);
   return flags;
 }
 
