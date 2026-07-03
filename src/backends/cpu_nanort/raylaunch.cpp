@@ -7,6 +7,7 @@
 
 #include "rftrace/detail/batch_query.hpp"
 #include "rftrace/detail/propagation.hpp"
+#include "rftrace/detail/receiver_grid.hpp"
 #include "rftrace/rf/reflection.hpp"
 
 namespace rftrace::detail {
@@ -72,12 +73,17 @@ constexpr double kFar = 1e6;
 void captureSegment(const Scene& scene, const Transmitter& tx,
                     const std::vector<Receiver>& receivers,
                     const PropagationContext* ctx, double capture2,
+                    const ReceiverGrid& grid, std::vector<int>& cand,
                     const std::vector<Vec3>& bounces, const std::vector<int>& sig,
                     const Vec3& segStart, const Vec3& segEnd,
                     std::vector<std::vector<RFPath>>& out,
                     std::vector<std::unordered_map<std::string, int>>& seen) {
-  const int nRx = static_cast<int>(receivers.size());
-  for (int r = 0; r < nRx; ++r) {
+  // Query the spatial index for a superset of receivers within capture range of
+  // this segment; the exact test below filters it to the reference set. Each
+  // receiver owns its out[r], so candidate iteration order is irrelevant.
+  cand.clear();
+  grid.query(segStart, segEnd, cand);
+  for (int r : cand) {
     if (distancePointToSegmentSq(receivers[r].position, segStart, segEnd) >
         capture2)
       continue;
@@ -145,6 +151,13 @@ std::vector<std::vector<RFPath>> rayLaunch(const Scene& scene,
   const int nRays = std::max(0, settings.raysPerTransmitter);
   const double capture2 = settings.captureRadius * settings.captureRadius;
 
+  // Exact receiver spatial index, built once per call. Turns the per-segment
+  // O(receivers) capture scan into a near-linear query; the query is a superset
+  // and the exact distance test in captureSegment filters it, so out[r] is
+  // byte-identical to the brute-force reference. `cand` is reusable scratch.
+  const ReceiverGrid rxGrid(receivers, capture2);
+  std::vector<int> cand;
+
   // --- Phase A: batched wavefront traversal (records, no captures) ----------
   // Every ray's walked segments land in walk[ray] in bounce order. The order of
   // rays in the batch never touches out[r]; captures are replayed ray-major.
@@ -197,8 +210,8 @@ std::vector<std::vector<RFPath>> rayLaunch(const Scene& scene,
     std::vector<int> sig;
     for (const SegRecord& rec : walk[i]) {
       if (!bounces.empty())
-        captureSegment(scene, tx, receivers, ctx, capture2, bounces, sig,
-                       rec.origin, rec.segEnd, out, seen);
+        captureSegment(scene, tx, receivers, ctx, capture2, rxGrid, cand,
+                       bounces, sig, rec.origin, rec.segEnd, out, seen);
       if (rec.hitValid) {
         bounces.push_back(rec.hitPoint);
         sig.push_back(rec.hitTriangle);
