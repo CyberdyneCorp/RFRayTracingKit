@@ -53,17 +53,25 @@ model: reciprocity, continuity across the shadow boundary, and monotonic deepeni
 - **WHEN** the receiver moves progressively deeper into the geometric shadow behind the edge
 - **THEN** the diffracted-path loss SHALL increase monotonically
 
-### Requirement: Multi-edge UTD cascade
-The UTD path model SHALL support diffraction over multiple obstructing edges by cascading the
-single-wedge diffraction (each edge's diffracted field feeding the next, a UTD analog of the Deygout
-dominant-edge construction). With a single obstructing edge the cascade SHALL reduce exactly to the
-single-wedge result.
+### Requirement: Multi-edge UTD for doubly-obstructed links
+The UTD path model SHALL produce a finite diffracted-path loss for a **doubly-obstructed** link — one
+where no single edge provides a clearing detour, the case the single-wedge selection would otherwise
+reject — by a successive-edge (Deygout) construction over the terrain profile using UTD per-edge loss.
+This SHALL be **additive**: when a single edge provides a clearing detour the model SHALL use the
+single-wedge path unchanged (so its results are identical to the single-wedge requirement); the
+multi-edge construction SHALL only apply where the single-wedge selection finds no clearing edge, so
+no previously-produced result changes. The multi-edge loss SHALL be reciprocal and deterministic.
 
-#### Scenario: Single edge reduces to the single-wedge result
-- **WHEN** only one edge obstructs the link
-- **THEN** the multi-edge UTD loss SHALL equal the single-wedge UTD loss for that edge
+#### Scenario: Single obstruction uses the single-wedge path
+- **WHEN** exactly one edge obstructs the link (a clearing detour exists)
+- **THEN** the loss SHALL equal the single-wedge UTD loss for that edge (the multi-edge construction
+  SHALL NOT alter it)
 
-#### Scenario: Multiple edges accumulate loss
-- **WHEN** two or more edges successively obstruct the link
-- **THEN** the cascade SHALL apply UTD diffraction at each edge in order and return a finite total
-  loss no less than the strongest single-edge contribution
+#### Scenario: Doubly-obstructed link yields a finite cascaded loss
+- **WHEN** the link is obstructed by multiple obstacles in series such that no single edge clears it
+- **THEN** the model SHALL return a finite multi-edge UTD loss no less than the strongest single
+  obstacle's contribution, where the single-wedge path alone would have produced no diffracted path
+
+#### Scenario: Multi-edge loss is reciprocal
+- **WHEN** the transmitter and receiver are swapped on a doubly-obstructed link
+- **THEN** the multi-edge UTD loss SHALL be equal within numerical tolerance

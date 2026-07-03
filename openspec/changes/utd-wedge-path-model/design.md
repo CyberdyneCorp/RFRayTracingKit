@@ -63,12 +63,30 @@ normalization to the ITU-R knife edge.
 half-plane reference used by that limiting-case test. **Why:** additive/behavioural upgrade in place,
 default-neutral (knife-edge remains default; non-UTD results untouched).
 
-### D5 — Multi-edge cascade (Phase 2): Deygout-analog with UTD coefficients
-Find the dominant obstructing edge, apply UTD there, then recurse on the sub-links (tx→edge and
-edge→rx) for secondary edges, summing the per-edge diffraction losses (dB). A single obstructing edge
-reduces exactly to Phase 1. **Why:** mirrors the validated `deygoutRecurse` structure in
-`diffraction_multi.hpp`, but with UTD per-edge loss. *Non-goal:* rigorous double-diffraction
-transition cross-terms.
+### D5 — Multi-edge (Phase 2): additive UTD Deygout over the terrain profile for doubly-obstructed links
+**(Revised.)** A first attempt to cascade over the single-wedge candidate edges was proven
+structurally impossible: the Phase-1 root edge is only selected when *both* detour legs are
+unoccluded, so those legs are clear and no edge can add a genuine secondary term — a valid root and
+real secondary edges are mutually exclusive. Multi-edge diffraction is exactly the case Phase 1
+*rejects*: a **doubly-obstructed** link where no single edge clears the detour (`diffractionPath`
+returns `nullopt` today). The existing terrain-profile Deygout machinery
+(`buildTerrainProfile` + `deygoutRecurse` in `diffraction_multi.hpp`) already handles multiple
+obstacles with a *signed* profile clearance, so:
+
+- **Single obstruction → unchanged Phase-1 single-wedge path** (the best clearing scene edge), so
+  reduce-to-single is exact and existing UTD results are untouched.
+- **Doubly-obstructed link (Phase-1 finds no clearing edge) → additive UTD Deygout over the profile**:
+  build the terrain profile and compute a UTD multi-edge loss by mirroring `deygoutRecurse` but with
+  the per-edge loss = `utdDiffractionLossDb(v)` (the validated half-plane UTD, since a profile ridge
+  is a half-plane) instead of `knifeEdgeLossDb(v)`. This produces a diffracted path where UTD
+  previously produced none — purely **additive** (a case that had no path before), so no existing
+  result changes and no golden data moves.
+
+**Why:** reuses validated, reciprocal profile machinery with inherently signed clearance; genuinely
+handles multi-obstruction; and is additive/golden-safe. **Non-goals:** wedge angles for secondary
+*profile* edges (they are ridges → half-planes; the dominant scene edge still gets full wedge
+geometry in the single-obstruction path), and rigorous double-diffraction transition cross-terms
+(this is the successive-edge Deygout approximation, documented).
 
 ### D6 — Validation is physical, not a golden number
 UTD has no simple closed-form scene answer, so gates are properties: (a) reduce-to-knife-edge for
