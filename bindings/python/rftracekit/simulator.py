@@ -11,6 +11,7 @@ from .route import RouteResult
 CoverageGrid = _native.CoverageGrid
 PropagationMode = _native.PropagationMode
 Backend = _native.Backend
+DiffractionModel = _native.DiffractionModel
 
 
 def SimulationSettings(
@@ -23,13 +24,21 @@ def SimulationSettings(
     seed: Optional[int] = None,
     coherent: Optional[bool] = None,
     allow_backend_fallback: Optional[bool] = None,
+    thread_count: Optional[int] = None,
+    enable_diffraction: Optional[bool] = None,
+    diffraction_model=None,
+    enable_depolarization: Optional[bool] = None,
     simulation_id: Optional[str] = None,
 ) -> "_native.SimulationSettings":
     """Build a native :class:`SimulationSettings` from friendly arguments.
 
-    ``backend`` accepts ``'cpu'``, ``'metal'``, ``'embree'``, ``'cuda'`` or
+    ``backend`` accepts ``'cpu'``, ``'embree'``, ``'cuda'``, ``'metal'`` or
     ``'opencl'`` (or a :class:`Backend`); ``mode`` accepts ``'image'`` or
-    ``'raylaunch'`` (or a :class:`PropagationMode`). Unspecified fields keep
+    ``'raylaunch'`` (or a :class:`PropagationMode`). ``thread_count`` controls
+    deterministic CPU parallelism (0 = all cores, 1 = serial; results are
+    identical either way). ``diffraction_model`` accepts ``'single'``,
+    ``'bullington'``, ``'deygout'`` or ``'utd'`` (or a :class:`DiffractionModel`)
+    and takes effect when ``enable_diffraction`` is set. Unspecified fields keep
     their C++ defaults.
     """
     settings = _native.SimulationSettings(
@@ -42,6 +51,10 @@ def SimulationSettings(
     _apply(settings, "seed", seed)
     _apply(settings, "coherent", coherent)
     _apply(settings, "allow_backend_fallback", allow_backend_fallback)
+    _apply(settings, "thread_count", thread_count)
+    _apply(settings, "enable_diffraction", enable_diffraction)
+    _apply(settings, "diffraction_model", diffraction_model)
+    _apply(settings, "enable_depolarization", enable_depolarization)
     _apply(settings, "simulation_id", simulation_id)
     return settings
 
@@ -106,5 +119,6 @@ __all__ = [
     "make_grid",
     "PropagationMode",
     "Backend",
+    "DiffractionModel",
     "RouteResult",
 ]

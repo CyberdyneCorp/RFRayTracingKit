@@ -187,7 +187,13 @@ scene = rf.Scene()
 scene.add_transmitter(id="tower_1", position=[120, 80, 35], frequency_hz=3.5e9, power_dbm=43)
 scene.add_receiver(id="rx_001", position=[300, 180, 1.5])
 
-result = rf.Simulator(rf.SimulationSettings(mode="raylaunch", max_reflections=3)).run(scene)
+settings = rf.SimulationSettings(
+    backend="embree",              # 'cpu' | 'embree' | 'cuda' | 'metal' | 'opencl' (falls back to CPU)
+    mode="raylaunch", max_reflections=3,
+    thread_count=0,                # 0 = all cores, 1 = serial (identical results)
+    enable_diffraction=True, diffraction_model="utd",  # geometry-driven UTD wedge
+)
+result = rf.Simulator(settings).run(scene)
 
 df  = result.receivers_dataframe()          # pandas (optional)
 pos = result.receiver_positions             # numpy float64[N,3]
@@ -196,8 +202,9 @@ result.to_geojson("paths.geojson", kind="paths")
 
 NumPy interop (`receiver_positions`, `received_power_dbm`, coverage `coverage_array`), optional pandas
 (`receivers_dataframe()`), and lazy visualization helpers (`rftracekit.viz`, `plot_3d`,
-`plot_coverage`). Build with `just py-build` (needs `python3` + `pybind11` + `numpy`;
-`-DRFTRACE_ENABLE_PYTHON=ON`).
+`plot_coverage`). Backend selection, deterministic `thread_count` parallelism, and the geometry-driven
+UTD model are all reachable from Python — see `examples/backends_and_features` for a runnable showcase.
+Build with `just py-build` (needs `python3` + `pybind11` + `numpy`; `-DRFTRACE_ENABLE_PYTHON=ON`).
 
 ### Swift
 
