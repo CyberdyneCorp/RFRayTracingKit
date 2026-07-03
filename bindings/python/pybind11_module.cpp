@@ -118,6 +118,26 @@ PropagationMode modeFromObject(const py::handle& obj) {
   return obj.cast<PropagationMode>();
 }
 
+/// Parse a diffraction-model string ("single"/"bullington"/"deygout"/"utd").
+DiffractionModel diffractionModelFromString(const std::string& name) {
+  const std::string s = toLower(name);
+  if (s == "single" || s == "singleedge" || s == "single_edge" ||
+      s == "knife" || s == "knifeedge" || s == "knife_edge")
+    return DiffractionModel::SingleEdge;
+  if (s == "bullington") return DiffractionModel::Bullington;
+  if (s == "deygout") return DiffractionModel::Deygout;
+  if (s == "utd") return DiffractionModel::UTD;
+  throw std::invalid_argument("unknown diffraction model: " + name);
+}
+
+/// Accept a DiffractionModel enum or a string.
+DiffractionModel diffractionModelFromObject(const py::handle& obj) {
+  if (py::isinstance<py::str>(obj)) {
+    return diffractionModelFromString(obj.cast<std::string>());
+  }
+  return obj.cast<DiffractionModel>();
+}
+
 #if RFTRACE_HAVE_GDAL
 /// Parse a coverage-metric string ("power" / "path_loss" / "sinr").
 io::CoverageMetric metricFromString(const std::string& name) {
@@ -143,6 +163,12 @@ void bindEnums(py::module_& m) {
   py::enum_<PropagationMode>(m, "PropagationMode")
       .value("ImageMethod", PropagationMode::ImageMethod)
       .value("RayLaunch", PropagationMode::RayLaunch);
+
+  py::enum_<DiffractionModel>(m, "DiffractionModel")
+      .value("SingleEdge", DiffractionModel::SingleEdge)
+      .value("Bullington", DiffractionModel::Bullington)
+      .value("Deygout", DiffractionModel::Deygout)
+      .value("UTD", DiffractionModel::UTD);
 
   py::enum_<PathType>(m, "PathType")
       .value("LOS", PathType::LOS)
@@ -470,8 +496,18 @@ void bindSettings(py::module_& m) {
       .def_readwrite("coherent", &SimulationSettings::coherent)
       .def_readwrite("allow_backend_fallback",
                      &SimulationSettings::allowBackendFallback)
-      // Phase 7 advanced-RF toggles (all default off).
+      // Deterministic CPU parallelism: 0 = hardware concurrency, 1 = serial.
+      .def_readwrite("thread_count", &SimulationSettings::threadCount)
+      // Advanced-RF toggles (all default off / knife-edge).
       .def_readwrite("enable_diffraction", &SimulationSettings::enableDiffraction)
+      .def_property(
+          "diffraction_model",
+          [](const SimulationSettings& s) { return s.diffractionModel; },
+          [](SimulationSettings& s, const py::handle& m) {
+            s.diffractionModel = diffractionModelFromObject(m);
+          })
+      .def_readwrite("enable_depolarization",
+                     &SimulationSettings::enableDepolarization)
       .def_readwrite("enable_rain", &SimulationSettings::enableRain)
       .def_readwrite("rain_rate_mm_per_hr", &SimulationSettings::rainRateMmPerHr)
       .def_readwrite("enable_gaseous_attenuation",
