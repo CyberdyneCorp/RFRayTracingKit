@@ -162,6 +162,31 @@ cuda-local:
     cmake --build build-cuda -j
     ctest --test-dir build-cuda --output-on-failure
 
+# --- C API (stable extern "C" ABI) -------------------------------------------
+# Configure + build librftrace_c and run the C test (compiled as C) through
+# CTest. Behind RFTRACE_ENABLE_C_API so the default build is unchanged.
+c-api:
+    cmake -S . -B build-capi \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_CXX_COMPILER={{cxx}} \
+      {{vcpkg_arg}} \
+      -DRFTRACE_ENABLE_C_API=ON -DRFTRACE_BUILD_EXAMPLES=OFF
+    cmake --build build-capi -j
+    ctest --test-dir build-capi -R c_api --output-on-failure
+
+# Build + run the C test under AddressSanitizer / UBSan (leak-checked).
+c-api-asan:
+    cmake -S . -B build-capi-asan \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_CXX_COMPILER={{cxx}} \
+      {{vcpkg_arg}} \
+      -DRFTRACE_ENABLE_C_API=ON -DRFTRACE_BUILD_EXAMPLES=OFF -DRFTRACE_BUILD_TESTS=OFF \
+      -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+      -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+      -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+    cmake --build build-capi-asan --target c_api_test -j
+    ./build-capi-asan/c_api_test
+
 # --- Python bindings ---------------------------------------------------------
 # Interpreter for the Python extension (must have pybind11 + numpy installed).
 # Override if needed, e.g. `just py=/usr/bin/python3 py-build`.
@@ -196,4 +221,4 @@ install prefix="_install": build
 
 # Remove all build directories.
 clean:
-    rm -rf {{build_dir}} build-debug build-gcc build-asan build-embree build-metal build-opencl build-cuda
+    rm -rf {{build_dir}} build-debug build-gcc build-asan build-embree build-metal build-opencl build-cuda build-capi build-capi-asan
