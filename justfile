@@ -221,6 +221,15 @@ py-build:
 
 # Run the Python binding tests (requires py-build first; uses PYTHONPATH).
 py-test: py-build
+    #!/usr/bin/env bash
+    set -uo pipefail
+    # Anaconda/conda ship an older libstdc++ than the compiler that built the
+    # extension, so `import _native` fails there with `GLIBCXX_3.4.xx not found`.
+    # Preload the compiler's (newer, backward-compatible) libstdc++ so the newer
+    # symbols are available. On macOS (libc++) the path doesn't resolve, so this
+    # is a no-op — LD_PRELOAD isn't the macOS mechanism anyway.
+    lib=$({{cxx}} -print-file-name=libstdc++.so.6 2>/dev/null || true)
+    [ -f "$lib" ] && export LD_PRELOAD="${LD_PRELOAD:-}${LD_PRELOAD:+:}$lib"
     PYTHONPATH={{py_path}} {{py}} -m pytest {{py_path}} -q
 
 # Validate all OpenSpec specs and changes.
