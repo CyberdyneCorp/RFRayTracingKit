@@ -23,7 +23,9 @@ correctness reference against which all GPU backends are validated.
 
 - **Language:** C++20 (core), Python 3.9+ (bindings layer)
 - **Math:** Eigen (vectors, matrices, complex numbers, antenna/MIMO math)
-- **Ray tracing (CPU):** NanoRT-style BVH; optional Embree adapter for validation/perf
+- **Ray tracing (CPU):** pure-C++20 NanoRT-style BVH (double precision) — the always-available,
+  zero-dependency default, reference oracle, and fallback; optional Embree 4 backend
+  (`RFTRACE_ENABLE_EMBREE`, float32, validated against the BVH) for perf
 - **Scene import:** Assimp (glTF/OBJ/FBX), GDAL (GeoTIFF/DEM terrain — later phase)
 - **Serialization:** nlohmann/json (config, materials, results)
 - **Python bindings:** pybind11 with NumPy-compatible zero-copy buffers (later phase)
@@ -109,7 +111,7 @@ where Swift is available.
 
 **Known gaps / not yet built:** batching the remaining per-ray query sites
 (image-method reflection segments, `buildTerrainProfile` down-rays, diffraction edges) for
-traversal-heavy scenes; Embree adapter (flag maps to CPU); general multi-edge/wedge UTD path model
+traversal-heavy scenes; general multi-edge/wedge UTD path model
 (current UTD reuses the dominant-edge v as a half-plane); CLI tools
 (`rftrace-cli`, `scene-validator`, `result-converter`).
 

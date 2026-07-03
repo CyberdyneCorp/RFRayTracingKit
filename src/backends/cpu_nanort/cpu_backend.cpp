@@ -15,6 +15,10 @@
 #include "rftrace/backends/cuda_backend.hpp"
 #endif
 
+#if RFTRACE_HAVE_EMBREE
+#include "rftrace/backends/embree_backend.hpp"
+#endif
+
 namespace rftrace {
 
 namespace {
@@ -89,7 +93,7 @@ bool backendAvailable(Backend backend) {
       return true;
     case Backend::Embree:
 #if RFTRACE_HAVE_EMBREE
-      return true;
+      return embreeDeviceAvailable();
 #else
       return false;
 #endif
@@ -116,10 +120,21 @@ bool backendAvailable(Backend backend) {
 }
 
 std::unique_ptr<IBackend> makeBackend(Backend backend, bool allowFallback) {
-  // The CPU traversal implementation is the reference. Embree, when enabled, is
-  // validated against it in a later task; until then it maps to CPU too.
-  if (backend == Backend::CPU || backend == Backend::Embree)
+  // The CPU traversal implementation is the reference and default fallback.
+  if (backend == Backend::CPU)
     return std::make_unique<CpuBackend>();
+
+#if RFTRACE_HAVE_EMBREE
+  if (backend == Backend::Embree && embreeDeviceAvailable()) {
+    try {
+      return makeEmbreeBackend();
+    } catch (const std::exception&) {
+      // Runtime device/scene-build failure: treat the backend as unavailable and
+      // fall back to CPU when permitted, rather than propagating.
+      if (!allowFallback) throw;
+    }
+  }
+#endif
 
 #if RFTRACE_HAVE_METAL
   if (backend == Backend::Metal && metalDeviceAvailable()) {
