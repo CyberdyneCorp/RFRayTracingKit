@@ -148,13 +148,17 @@ the device buffers).
 - **Benchmark**: `rftrace_cuda_benchmark [triangles] [rays] [seed]` (example target) times CPU vs
   CUDA for `build()`, `closestHitBatch()`, and `occludedBatch()` on a procedural city, with a
   correctness cross-check. On an RTX 5060 (OptiX 9.0.0) over 1M rays: a 1M-triangle scene gives
-  ≈**450×** closest-hit and ≈**54×** occlusion speedup (100% hit/miss agreement), and the closest-hit
+  ≈**475×** closest-hit and ≈**150×** occlusion speedup (100% hit/miss agreement), and the closest-hit
   speedup grows with scene size as the CPU BVH slows. It runs CPU-only when no GPU is present.
-- **Query buffers are pooled**: the per-query device ray/hit buffers are reused across dispatches
-  (grown on demand), so a steady batch size allocates once. At these batch sizes GPU throughput
-  (~23 Mray/s) is bound by fixed per-call overhead — host double→float marshalling and the
-  synchronous launch — not device allocation (measured ~0.19 ms/1M-ray call) or transfer (~4 ms);
-  pinned host staging + stream overlap is the next lever if the per-call path is ever hot.
+- **Optimised query path**: the per-query buffers are pooled across dispatches (device buffers plus
+  page-locked *pinned* host staging), grown on demand. Rays are converted straight into pinned
+  memory (no zero-initialised staging vector) and streamed with async H2D/D2H copies, so the only
+  host work per launch is the unavoidable double→float conversion. Profiled on 1M rays (set
+  `RFTRACE_CUDA_PROFILE=1`): the device dispatch is ~7 ms (~140 Mray/s) — convert ≈4.5 ms, launch
+  ≈0.8 ms (the RT cores trace 1M rays in under a millisecond), H2D/D2H the rest. Occlusion reaches
+  ~120 Mray/s end-to-end; `closestHitBatch` is then bounded by allocating its returned
+  `std::vector<Hit>` (~40 MB for 1M rays — an API cost borne equally by the CPU backend), not the
+  device path.
 
 > **Verified on NVIDIA hardware.** The backend and its parity suite have been compiled and run on
 > an NVIDIA GeForce RTX 5060 (Blackwell, `sm_120`) — CUDA Toolkit 12.0, driver 580.95.05, **OptiX

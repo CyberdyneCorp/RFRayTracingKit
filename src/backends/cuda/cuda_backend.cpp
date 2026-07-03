@@ -24,7 +24,9 @@
 
 #include <cuda_runtime.h>
 
+#include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <memory>
@@ -120,6 +122,8 @@ class CudaBackend final : public IBackend {
     releaseScene();
     if (rayBuf_) cudaFree(reinterpret_cast<void*>(rayBuf_));
     if (hitBuf_) cudaFree(reinterpret_cast<void*>(hitBuf_));
+    if (pinnedRays_) cudaFreeHost(pinnedRays_);
+    if (pinnedHits_) cudaFreeHost(pinnedHits_);
     if (paramsBuf_) cudaFree(reinterpret_cast<void*>(paramsBuf_));
     if (raygenRecord_) cudaFree(reinterpret_cast<void*>(raygenRecord_));
     if (missRecord_) cudaFree(reinterpret_cast<void*>(missRecord_));
@@ -185,7 +189,7 @@ class CudaBackend final : public IBackend {
       const std::vector<Ray>& rays) const override {
     std::vector<Hit> out(rays.size());
     if (rays.empty()) return out;
-    const std::vector<GpuHit> hits = dispatch(rays, /*occlusion=*/false);
+    const GpuHit* hits = dispatch(rays, /*occlusion=*/false);
     for (std::size_t i = 0; i < rays.size(); ++i) {
       const GpuHit& g = hits[i];
       if (g.valid) {
@@ -202,7 +206,7 @@ class CudaBackend final : public IBackend {
   std::vector<char> occludedBatch(const std::vector<Ray>& rays) const override {
     std::vector<char> out(rays.size(), 0);
     if (rays.empty()) return out;
-    const std::vector<GpuHit> hits = dispatch(rays, /*occlusion=*/true);
+    const GpuHit* hits = dispatch(rays, /*occlusion=*/true);
     for (std::size_t i = 0; i < rays.size(); ++i)
       out[i] = hits[i].valid ? 1 : 0;
     return out;
@@ -410,23 +414,35 @@ class CudaBackend final : public IBackend {
     }
   }
 
-  std::vector<GpuHit> dispatch(const std::vector<Ray>& rays,
-                               bool occlusion) const {
+  // Run the batch and leave `count` hits in the pinned host buffer, returning a
+  // pointer to it. The result is valid until the next dispatch() call (the
+  // buffer is pooled and reused). Rays are converted straight into pinned host
+  // memory and streamed to/from the device with async copies, so the only host
+  // work is the unavoidable double->float conversion.
+  const GpuHit* dispatch(const std::vector<Ray>& rays, bool occlusion) const {
     const std::uint32_t count = static_cast<std::uint32_t>(rays.size());
-    std::vector<GpuHit> result(count);
+    if (count == 0) return nullptr;
+    ensureQueryCapacity(count);
     // Empty scene (or unbuilt): every ray misses.
     if (handle_ == 0 || triangleCount_ == 0) {
-      std::memset(result.data(), 0, result.size() * sizeof(GpuHit));
-      return result;
+      std::memset(pinnedHits_, 0, count * sizeof(GpuHit));
+      return pinnedHits_;
     }
 
-    std::vector<GpuRay> gpuRays(count);
-    for (std::uint32_t i = 0; i < count; ++i) gpuRays[i] = toGpuRay(rays[i]);
+    auto now = [] { return std::chrono::steady_clock::now(); };
+    auto ms = [](auto a, auto b) {
+      return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    auto t0 = now();
 
-    ensureQueryCapacity(count);
-    cudaCheck(cudaMemcpy(reinterpret_cast<void*>(rayBuf_), gpuRays.data(),
-                         count * sizeof(GpuRay), cudaMemcpyHostToDevice),
-              "cudaMemcpy(rays)");
+    // Convert straight into page-locked staging (no zero-initialized vector).
+    for (std::uint32_t i = 0; i < count; ++i) pinnedRays_[i] = toGpuRay(rays[i]);
+    auto t1 = now();
+
+    cudaCheck(cudaMemcpyAsync(reinterpret_cast<void*>(rayBuf_), pinnedRays_,
+                              count * sizeof(GpuRay), cudaMemcpyHostToDevice,
+                              stream_),
+              "cudaMemcpyAsync(rays)");
 
     LaunchParams params = {};
     params.rays = reinterpret_cast<const GpuRay*>(rayBuf_);
@@ -434,37 +450,57 @@ class CudaBackend final : public IBackend {
     params.count = count;
     params.occlusion = occlusion ? 1u : 0u;
     params.handle = static_cast<unsigned long long>(handle_);
-    cudaCheck(cudaMemcpy(reinterpret_cast<void*>(paramsBuf_), &params,
-                         sizeof(LaunchParams), cudaMemcpyHostToDevice),
-              "cudaMemcpy(params)");
+    cudaCheck(cudaMemcpyAsync(reinterpret_cast<void*>(paramsBuf_), &params,
+                              sizeof(LaunchParams), cudaMemcpyHostToDevice,
+                              stream_),
+              "cudaMemcpyAsync(params)");
+    auto t2 = now();
 
     optixCheck(optixLaunch(pipeline_, stream_, paramsBuf_, sizeof(LaunchParams),
                            &sbt_, count, 1, 1),
                "optixLaunch");
-    cudaCheck(cudaStreamSynchronize(stream_), "cudaStreamSynchronize(launch)");
 
-    cudaCheck(cudaMemcpy(result.data(), reinterpret_cast<void*>(hitBuf_),
-                         count * sizeof(GpuHit), cudaMemcpyDeviceToHost),
-              "cudaMemcpy(hits)");
-    return result;
+    cudaCheck(cudaMemcpyAsync(pinnedHits_, reinterpret_cast<void*>(hitBuf_),
+                              count * sizeof(GpuHit), cudaMemcpyDeviceToHost,
+                              stream_),
+              "cudaMemcpyAsync(hits)");
+    cudaCheck(cudaStreamSynchronize(stream_), "cudaStreamSynchronize(launch)");
+    auto t3 = now();
+    if (profile_)
+      std::fprintf(stderr,
+                   "[cuda dispatch %s n=%u] convert=%.2f H2D-enqueue=%.2f "
+                   "launch+D2H+sync=%.2f ms\n",
+                   occlusion ? "occ" : "hit", count, ms(t0, t1), ms(t1, t2),
+                   ms(t2, t3));
+    return pinnedHits_;
   }
 
-  // Grow the reusable device ray/hit buffers to hold at least `count` rays.
-  // Pooled across dispatch() calls (grown on demand, never shrunk) so a steady
-  // batch size allocates once instead of cudaMalloc/cudaFree per launch.
+  // Grow the reusable device + pinned-host ray/hit buffers to hold at least
+  // `count` rays. Pooled across dispatch() calls (grown on demand, never shrunk)
+  // so a steady batch size allocates once instead of per launch.
   void ensureQueryCapacity(std::size_t count) const {
     if (count <= rayCapacity_) return;
     if (rayBuf_) cudaFree(reinterpret_cast<void*>(rayBuf_));
     if (hitBuf_) cudaFree(reinterpret_cast<void*>(hitBuf_));
+    if (pinnedRays_) cudaFreeHost(pinnedRays_);
+    if (pinnedHits_) cudaFreeHost(pinnedHits_);
     rayBuf_ = 0;
     hitBuf_ = 0;
-    rayCapacity_ = 0;  // stay consistent if a malloc below throws
+    pinnedRays_ = nullptr;
+    pinnedHits_ = nullptr;
+    rayCapacity_ = 0;  // stay consistent if an allocation below throws
     cudaCheck(cudaMalloc(reinterpret_cast<void**>(&rayBuf_),
                          count * sizeof(GpuRay)),
               "cudaMalloc(rays)");
     cudaCheck(cudaMalloc(reinterpret_cast<void**>(&hitBuf_),
                          count * sizeof(GpuHit)),
               "cudaMalloc(hits)");
+    cudaCheck(cudaMallocHost(reinterpret_cast<void**>(&pinnedRays_),
+                             count * sizeof(GpuRay)),
+              "cudaMallocHost(rays)");
+    cudaCheck(cudaMallocHost(reinterpret_cast<void**>(&pinnedHits_),
+                             count * sizeof(GpuHit)),
+              "cudaMallocHost(hits)");
     rayCapacity_ = count;
   }
 
@@ -492,12 +528,21 @@ class CudaBackend final : public IBackend {
   CUdeviceptr hitRecord_ = 0;
   CUdeviceptr paramsBuf_ = 0;
 
-  // Reusable per-query device buffers, pooled across dispatch() calls (grown on
-  // demand, never shrunk). Mutable because dispatch()/ensureQueryCapacity() are
-  // const; safe under the documented single-threaded query contract.
+  // Reusable per-query buffers, pooled across dispatch() calls (grown on demand,
+  // never shrunk). Device buffers hold the rays/hits for the launch; the pinned
+  // host buffers are page-locked staging so conversion writes through directly
+  // (no zero-initialized std::vector) and the H2D/D2H copies run at full PCIe
+  // bandwidth. Mutable because dispatch()/ensureQueryCapacity() are const; safe
+  // under the documented single-threaded query contract.
   mutable CUdeviceptr rayBuf_ = 0;
   mutable CUdeviceptr hitBuf_ = 0;
+  mutable GpuRay* pinnedRays_ = nullptr;
+  mutable GpuHit* pinnedHits_ = nullptr;
   mutable std::size_t rayCapacity_ = 0;
+
+  // Per-dispatch phase timing to stderr when RFTRACE_CUDA_PROFILE is set in the
+  // environment (read once). Off by default and free (a single bool test).
+  const bool profile_ = std::getenv("RFTRACE_CUDA_PROFILE") != nullptr;
 
   // Scene (rebuilt on each build()).
   CUdeviceptr vertBuf_ = 0;
