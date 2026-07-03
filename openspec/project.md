@@ -44,7 +44,7 @@ correctness reference against which all GPU backends are validated.
 
 ## Development Phases (Roadmap)
 
-Status as of 2026-07-02 (all core work verified by build+test unless noted):
+Status as of 2026-07-03 (all core work verified by build+test unless noted):
 
 1. **CPU Prototype** ✅ — scene model, mesh/material import, NanoRT-style BVH, LOS +
    reflection, FSPL, JSON/CSV export.
@@ -53,8 +53,10 @@ Status as of 2026-07-02 (all core work verified by build+test unless noted):
 3. **Python Bindings & Visualization** ✅ — pybind11 `rftracekit`, NumPy/pandas,
    PyVista/Plotly helpers (arrays + advanced-RF settings exposed).
 4. **Metal Backend** ✅ — `MTLAccelerationStructure` + batched query API, CPU-vs-Metal parity.
-5. **CUDA Backend** ⚠️ — OptiX + CUDA kernels written, flag-gated; **UNVERIFIED** (no
-   NVIDIA/OptiX host); to validate on NVIDIA hardware.
+5. **CUDA Backend** ✅ — OptiX + CUDA kernels, flag-gated; **verified on an NVIDIA GeForce
+   RTX 5060** (Blackwell, `sm_120`; CUDA 12.0, driver 580.95.05, OptiX SDK 9.0.0) with
+   CPU-vs-CUDA parity. Optimised query path (pooled device + pinned host staging, async
+   copies) and a caller-owned-output API (`closestHitBatchInto`/`occludedBatchInto`).
 6. **OpenCL Backend** ✅ — custom flat-BVH traversal kernel, CPU-vs-OpenCL parity (Apple OpenCL).
 7. **Advanced RF** ✅ — knife-edge diffraction, rain/gaseous/vegetation attenuation, antenna
    arrays + beam steering, MIMO channel + capacity, SINR/cell planning, route simulation.
@@ -77,10 +79,17 @@ Status as of 2026-07-02 (all core work verified by build+test unless noted):
 UTD is now a selectable diffraction path model (`DiffractionModel::UTD`, tracks knife-edge) and
 reflection **depolarization** is wired (opt-in via `enableDepolarization`).
 
-**Known gaps / not yet built:** CUDA validation on real hardware; a *batched* simulator path
-so GPU backends accelerate a full run (currently per-ray); Embree adapter (flag maps to CPU);
-general multi-edge/wedge UTD path model (current UTD reuses the dominant-edge v as a half-plane);
-Swift bindings + C API; CLI tools (`rftrace-cli`, `scene-validator`, `result-converter`); CI workflow.
+The batched query API is now **caller-owned-output capable**: `IBackend::closestHitBatchInto`
+/ `occludedBatchInto` write into a caller-reused `std::span`, allocating nothing for the output
+(the vector-returning forms are thin wrappers). The CUDA backend overrides these as its
+zero-output-allocation fast path.
+
+**Known gaps / not yet built:** a *batched* simulator path so GPU backends accelerate a full
+run (the image-method/coverage loops still issue per-ray `closestHit`/`occluded`, so a real
+run does not yet use the batched `...Into` API — the highest-value next step for the GPU
+backends); Embree adapter (flag maps to CPU); general multi-edge/wedge UTD path model (current
+UTD reuses the dominant-edge v as a half-plane); Swift bindings + C API; CLI tools
+(`rftrace-cli`, `scene-validator`, `result-converter`); CI workflow.
 
 ## Project Conventions
 

@@ -145,6 +145,34 @@ and the CPU backend inherits the default implementations. `occludedBatch` SHALL 
 - **WHEN** an empty ray vector is passed to either batched method
 - **THEN** the method SHALL return an empty result vector without error
 
+### Requirement: Caller-owned-output batched query API
+The backend interface SHALL expose caller-owned-output batched query methods —
+`closestHitBatchInto(const std::vector<Ray>&, std::span<Hit>) const` and
+`occludedBatchInto(const std::vector<Ray>&, std::span<char>) const` — that write one result per
+ray into a buffer the caller owns (so it can be reused across batches, allocating nothing for the
+output). These SHALL be the batched primitive: the vector-returning `closestHitBatch`/
+`occludedBatch` SHALL be thin wrappers that allocate once and delegate, and accelerated backends
+SHALL override the `...Into` forms. The addition SHALL be backward compatible and default-neutral:
+the default `...Into` implementations loop the single-ray queries. Each `...Into` call SHALL write
+**every** output slot (hits and misses), so a reused buffer holding a prior batch's results stays
+correct.
+
+#### Scenario: Into forms agree with the vector forms
+- **WHEN** `closestHitBatchInto(rays, out)` (respectively `occludedBatchInto`) is called with an
+  `out` span sized to `rays.size()`
+- **THEN** `out` SHALL contain the same results, element by element, as the vector-returning
+  `closestHitBatch(rays)` (respectively `occludedBatch(rays)`)
+
+#### Scenario: Reused buffer is fully overwritten
+- **WHEN** an output buffer already holding hits from a prior batch is passed to
+  `closestHitBatchInto` (or `occludedBatchInto`) for a new batch whose rays all miss
+- **THEN** every slot SHALL be overwritten to a miss, with no stale hit retained
+
+#### Scenario: CUDA backend uses the Into forms as its zero-allocation fast path
+- **WHEN** a batch is submitted to the CUDA backend's `closestHitBatchInto`/`occludedBatchInto`
+- **THEN** the backend SHALL service it in a single device dispatch and write results directly
+  into the caller's span, allocating nothing for the output
+
 ### Requirement: CPU-vs-Metal traversal parity
 When the Metal backend is available, its ray-traversal results SHALL match the CPU reference
 backend for the same scene and rays: hit vs miss SHALL match exactly, the reported triangle
