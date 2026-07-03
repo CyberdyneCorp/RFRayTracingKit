@@ -203,7 +203,7 @@ c-api-asan:
 # Interpreter for the Python extension (must have pybind11 + numpy installed).
 # Override if needed, e.g. `just py=/usr/bin/python3 py-build`.
 py           := "python3"
-py_build_dir := "build"
+py_build_dir := "build-py"
 py_path      := justfile_directory() / "bindings/python"
 
 # Configure + build the C++ core and the rftracekit._native extension. The
@@ -233,4 +233,4 @@ install prefix="_install": build
 
 # Remove all build directories.
 clean:
-    rm -rf {{build_dir}} build-debug build-gcc build-asan build-embree build-metal build-opencl build-cuda build-capi build-capi-asan
+    rm -rf {{build_dir}} build-debug build-gcc build-asan build-embree build-metal build-opencl build-cuda build-capi build-capi-asan build-py

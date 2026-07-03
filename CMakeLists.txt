@@ -70,6 +70,12 @@ add_library(rftrace
 )
 add_library(rftrace::rftrace ALIAS rftrace)
 
+# Build position-independent so the static library can be linked into shared
+# objects — the Python extension (pybind11_add_module) and the C API shared lib.
+# Without this, linking librftrace.a into a .so fails on Linux (relocation
+# R_X86_64_PC32 ... cannot be used when making a shared object).
+set_target_properties(rftrace PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_include_directories(rftrace PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
