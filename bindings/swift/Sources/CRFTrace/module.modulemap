@@ -1,0 +1,5 @@
+module CRFTrace {
+    header "shim.h"
+    link "rftrace_c"
+    export *
+}

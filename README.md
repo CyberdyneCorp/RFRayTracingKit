@@ -232,10 +232,15 @@ GDAL/Parquet-gated functions are present only when the extension is built with t
 `rf.gdal_available()` / `rf.parquet_available()` probe at runtime. Build all optional IO with
 `just io` (GDAL + Parquet + libosmium).
 
+A **C API** (`librftrace_c`, a stable no-throw `extern "C"` ABI behind `RFTRACE_ENABLE_C_API`; see
+`bindings/c/`) and an idiomatic **Swift package** on top of it (`bindings/swift/`) are available — the
+C API is C-tested and ASan-clean; the Swift package is authored to the C ABI and unverified where no
+Swift toolchain exists.
+
 Not yet built: batching the remaining per-ray sites (image-method reflection segments, diffraction
 edges, terrain probes) for
 traversal-heavy scenes; a general multi-edge/wedge UTD path model (the current selectable UTD
-reuses the dominant edge as a half-plane); an Embree adapter, CLI tools, Swift/C bindings, and a CI
+reuses the dominant edge as a half-plane); an Embree adapter, CLI tools, and a CI
 workflow. See `openspec/project.md` for the full roadmap.
 
 ## Building
