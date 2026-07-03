@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
