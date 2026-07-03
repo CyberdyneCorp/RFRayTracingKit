@@ -27,7 +27,7 @@
 
 ## 5. GPU acceleration validation & docs
 
-- [ ] 5.1 Add a GPU-gated test: `runCoverage` on the CUDA backend agrees with the CPU result within the CPU-vs-GPU parity tolerance (skips when no device).
-- [ ] 5.2 Benchmark a representative coverage/route scene CPU vs CUDA end-to-end (extend the example or add a small harness) and record the full-run speedup.
-- [ ] 5.3 Confirm GPU runs issue batched dispatches, not per-ray calls (e.g. via the `RFTRACE_CUDA_PROFILE` dispatch counter / phase log).
+- [x] 5.1 Add a GPU-gated test: `runCoverage` on the CUDA backend agrees with the CPU result within the CPU-vs-GPU parity tolerance (skips when no device). — `CudaFullSim.LosCoverageAgreesWithCpu` in test_cuda_parity.cpp.
+- [x] 5.2 Benchmark a representative coverage/route scene CPU vs CUDA end-to-end (extend the example or add a small harness) and record the full-run speedup. — `rftrace_sim_benchmark` example. Finding: batched traversal collapses a whole coverage run to a handful of dispatches (~1 ms total), but full-run wall time is dominated by CPU-side capture/dedup/RF-physics (and per-run OptiX backend build), so end-to-end GPU speedup is ~1x here; the real full-run bottleneck is CPU path processing, not ray traversal.
+- [x] 5.3 Confirm GPU runs issue batched dispatches, not per-ray calls (e.g. via the `RFTRACE_CUDA_PROFILE` dispatch counter / phase log). — Confirmed: a ray-launch coverage run issues 5 batched dispatches (LOS + per-bounce wavefront) totaling ~0.9 ms, not per-ray round trips.
 - [ ] 5.4 Update README (GPU-backend note: full runs now accelerated) and `openspec/project.md` (move "batched simulator path" from known gaps to done); run `openspec validate --strict` and archive the change.

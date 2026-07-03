@@ -32,6 +32,8 @@
 #include "rftrace/backend.hpp"
 #include "rftrace/geometry.hpp"
 #include "rftrace/math.hpp"
+#include "rftrace/scene.hpp"
+#include "rftrace/simulator.hpp"
 
 using namespace rftrace;
 
@@ -437,6 +439,63 @@ TEST(CudaParityScenes, CallerOwnedOutputMatchesVector) {
   gpu->closestHitBatchInto(misses, into);
   for (std::size_t i = 0; i < into.size(); ++i)
     EXPECT_FALSE(into[i].valid) << "stale hit at " << i;
+}
+
+// End-to-end validation: a full LOS coverage run on the CUDA backend must agree
+// with the CPU backend. With maxReflections=0 the ONLY backend query is LOS
+// occlusion (the received power is host-double FSPL), so wherever the float GPU
+// traversal and the double CPU BVH agree on occlusion the cell power is
+// bit-identical; only cells grazing a shadow edge may flip float-vs-double, and
+// those are required to be few. This exercises the Phase-1 batched-LOS path
+// through Simulator::runCoverage on real hardware.
+TEST(CudaFullSim, LosCoverageAgreesWithCpu) {
+  if (!cudaReady()) GTEST_SKIP() << "no CUDA device available";
+
+  Scene scene;
+  scene.addMesh(makeBox(Vec3(-30, -5, 0), Vec3(-10, 60, 25)), -1);
+  scene.addMesh(makeBox(Vec3(10, -5, 0), Vec3(30, 60, 25)), -1);
+  Transmitter t;
+  t.id = "tx";
+  t.position = Vec3(0, 30, 40);
+  t.frequencyHz = 3.5e9;
+  t.powerDbm = 43.0;
+  scene.addTransmitter(t);
+
+  CoverageGrid g;
+  g.origin = Vec3(-50, -10, 0);
+  g.cellSize = 2.0;
+  g.cols = 50;
+  g.rows = 40;
+  g.height = 1.5;
+
+  auto runOn = [&](Backend b) {
+    SimulationSettings s;
+    s.backend = b;
+    s.allowBackendFallback = false;  // force the real CUDA backend, no CPU fallback
+    s.maxReflections = 0;            // LOS-only: the one backend query is occlusion
+    return Simulator(s).runCoverage(scene, g);
+  };
+  const CoverageResult cpu = runOn(Backend::CPU);
+  const CoverageResult gpu = runOn(Backend::CUDA);
+  ASSERT_EQ(cpu.powerDbm.size(), gpu.powerDbm.size());
+
+  std::size_t both = 0, powerExact = 0, signalFlip = 0;
+  for (std::size_t i = 0; i < cpu.powerDbm.size(); ++i) {
+    const bool cs = std::isfinite(cpu.powerDbm[i]);
+    const bool gs = std::isfinite(gpu.powerDbm[i]);
+    if (cs != gs) {
+      ++signalFlip;  // borderline shadow-edge cell: occlusion flipped
+    } else if (cs) {
+      ++both;
+      if (cpu.powerDbm[i] == gpu.powerDbm[i]) ++powerExact;
+    }
+  }
+  EXPECT_GT(both, 0u) << "no covered cells to compare";
+  // Where both backends see the cell, LOS power is pure host-double FSPL -> exact.
+  EXPECT_EQ(both, powerExact) << "power differs where both have signal";
+  // Only cells grazing the shadow boundary may flip; require few (< 5%).
+  EXPECT_LT(signalFlip, cpu.powerDbm.size() / 20)
+      << signalFlip << " signal flips of " << cpu.powerDbm.size() << " cells";
 }
 
 #endif  // RFTRACE_HAVE_CUDA
