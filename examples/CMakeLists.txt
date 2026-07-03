@@ -14,3 +14,8 @@ target_link_libraries(rftrace_advanced_rf PRIVATE rftrace::rftrace)
 # with -DRFTRACE_ENABLE_CUDA=ON and an NVIDIA GPU + OptiX are present at runtime.
 add_executable(rftrace_cuda_benchmark cuda_benchmark/main.cpp)
 target_link_libraries(rftrace_cuda_benchmark PRIVATE rftrace::rftrace)
+
+# Full-simulation CPU-vs-CUDA benchmark: end-to-end Simulator::runCoverage,
+# exercising the batched simulator path. CPU-only unless built with CUDA + a GPU.
+add_executable(rftrace_sim_benchmark sim_benchmark/main.cpp)
+target_link_libraries(rftrace_sim_benchmark PRIVATE rftrace::rftrace)
