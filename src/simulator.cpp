@@ -320,6 +320,34 @@ rf::TerrainProfile buildTerrainProfile(const IBackend& backend, const Vec3& tx,
   return prof;
 }
 
+// Representative bend point (world space) for a doubly-obstructed multi-edge UTD
+// path: the top of the dominant (max-v) profile obstacle, mapped back onto the
+// tx→rx vertical plane. Only shapes the path geometry (length / arrival dirs);
+// the loss comes from utdDeygoutLossDb. Swap-symmetric (the dominant obstacle is
+// the same physical ridge under tx↔rx), so it preserves reciprocity.
+Vec3 multiEdgeBendPoint(const rf::TerrainProfile& prof, const Vec3& tx,
+                        const Vec3& rx, double wavelength) {
+  const Vec3 txXY{tx.x(), tx.y(), 0.0};
+  const Vec3 rxXY{rx.x(), rx.y(), 0.0};
+  const double D = prof.totalDistanceMeters;
+  const rf::ProfilePoint txEnd{0.0, prof.txHeightMeters};
+  const rf::ProfilePoint rxEnd{D, prof.rxHeightMeters};
+  const rf::ProfilePoint* dom = nullptr;
+  double bestV = rf::detail::kNoEdgeV;
+  for (const rf::ProfilePoint& p : prof.obstacles) {
+    const double v =
+        rf::detail::profileFresnelParameter(txEnd, rxEnd, p, wavelength);
+    if (v > bestV) {
+      bestV = v;
+      dom = &p;
+    }
+  }
+  if (!dom || D <= kEps) return 0.5 * (tx + rx);
+  const Vec3 dirXY = (rxXY - txXY) / D;
+  const Vec3 baseXY = txXY + (dom->distanceMeters) * dirXY;
+  return Vec3{baseXY.x(), baseXY.y(), dom->heightMeters};
+}
+
 // Diffraction loss (dB) for a blocked link with a known dominant edge `v`.
 // Default (SingleEdge / no context) is the ITU-R P.526 knife-edge loss; the
 // multi-edge models build a terrain profile and apply Bullington / Deygout,
@@ -387,7 +415,30 @@ std::optional<RFPath> diffractionPath(const Scene& scene,
       }
     }
   }
-  if (!found) return std::nullopt;
+  if (!found) {
+    // Doubly-obstructed link: no single edge clears the detour, so Phase 1
+    // (knife-edge / Bullington / Deygout and the single-wedge UTD path) produces
+    // NO diffracted path here. ONLY for the UTD model, additively emit a
+    // multi-edge diffracted path from the terrain-profile UTD Deygout
+    // construction. Purely additive: a case that had no path before, so no
+    // existing (non-UTD, or single-wedge UTD) result moves.
+    if (!utd) return std::nullopt;
+    const rf::TerrainProfile prof =
+        buildTerrainProfile(backend, tx.position, rx.position);
+    if (prof.obstacles.empty()) return std::nullopt;
+    const double multiLoss = rf::utdDeygoutLossDb(prof, wavelength);
+    if (!std::isfinite(multiLoss) || multiLoss <= 0.0) return std::nullopt;
+    RFPath mp;
+    mp.transmitterId = tx.id;
+    mp.receiverId = rx.id;
+    mp.type = PathType::Diffraction;
+    mp.diffractions = 1;
+    mp.points = {tx.position,
+                 multiEdgeBendPoint(prof, tx.position, rx.position, wavelength),
+                 rx.position};
+    finishPath(mp, tx, rx, multiLoss, ctx);
+    return mp;
+  }
 
   RFPath p;
   p.transmitterId = tx.id;

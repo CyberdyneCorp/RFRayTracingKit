@@ -22,9 +22,9 @@
 
 ## 4. Phase 2 — multi-edge UTD for doubly-obstructed links (revised approach)
 
-- [ ] 4.1 Add a `utdDeygoutLossDb(profile, wavelength)` mirroring `detail::deygoutRecurse`/`deygoutLossDb` in `diffraction_multi.hpp` but with the per-edge loss = `rf::utdDiffractionLossDb(v)` (half-plane UTD) instead of `knifeEdgeLossDb(v)`.
-- [ ] 4.2 Wire it into the UTD branch of `diffractionPath` **additively**: keep the single-wedge path when a clearing scene edge is found (unchanged); when none is found (doubly-obstructed link that today returns `nullopt`), build the terrain profile and produce a diffracted path with the UTD Deygout loss. Gate strictly on `DiffractionModel::UTD`.
-- [ ] 4.3 Tests: single-obstruction still equals the Phase-1 single-wedge loss (exact, unchanged); a doubly-obstructed link yields a finite loss ≥ the strongest obstacle where the single-wedge path produced none; reciprocity (tx↔rx) and determinism; golden/regression + all Phase-1 gates stay green (additive, so nothing moves).
+- [x] 4.1 Add a `utdDeygoutLossDb(profile, wavelength)` mirroring `detail::deygoutRecurse`/`deygoutLossDb` in `diffraction_multi.hpp` but with the per-edge loss = `rf::utdDiffractionLossDb(v)` (half-plane UTD) instead of `knifeEdgeLossDb(v)`.
+- [x] 4.2 Wire it into the UTD branch of `diffractionPath` **additively**: keep the single-wedge path when a clearing scene edge is found (unchanged); when none is found (doubly-obstructed link that today returns `nullopt`), build the terrain profile and produce a diffracted path with the UTD Deygout loss. Gate strictly on `DiffractionModel::UTD`.
+- [x] 4.3 Tests: single-obstruction still equals the Phase-1 single-wedge loss (exact, unchanged); a doubly-obstructed link yields a finite loss ≥ the strongest obstacle where the single-wedge path produced none; reciprocity (tx↔rx) and determinism; golden/regression + all Phase-1 gates stay green (additive, so nothing moves).
 
 ## 5. Docs & archive
 
