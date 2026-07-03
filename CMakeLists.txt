@@ -13,6 +13,7 @@ endif()
 option(RFTRACE_BUILD_TESTS    "Build the test suite"          ON)
 option(RFTRACE_BUILD_EXAMPLES "Build the example programs"    ON)
 option(RFTRACE_ENABLE_PYTHON  "Build the Python bindings"     OFF)
+option(RFTRACE_ENABLE_C_API   "Build the C API (librftrace_c)" OFF)
 option(RFTRACE_ENABLE_METAL   "Enable the Metal backend"      OFF)
 option(RFTRACE_ENABLE_CUDA    "Enable the CUDA/OptiX backend" OFF)
 option(RFTRACE_ENABLE_OPENCL  "Enable the OpenCL backend"     OFF)
@@ -273,6 +274,35 @@ if(RFTRACE_ENABLE_PYTHON)
       LIBRARY_OUTPUT_DIRECTORY_${cfg_upper} ${RFTRACE_PY_PKG_DIR}
     )
   endforeach()
+endif()
+
+# ---- C API (stable extern "C" ABI over the core) ----------------------------
+# Additive and OFF by default so the default build is unchanged. Builds
+# librftrace_c (links the core), installs the C header, and registers a C-only
+# test compiled with the C compiler and linked against the C library.
+if(RFTRACE_ENABLE_C_API)
+  add_library(rftrace_c bindings/c/rftrace_c.cpp)
+  add_library(rftrace::rftrace_c ALIAS rftrace_c)
+  target_include_directories(rftrace_c PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  )
+  target_link_libraries(rftrace_c PRIVATE rftrace::rftrace)
+  set_target_properties(rftrace_c PROPERTIES C_VISIBILITY_PRESET default)
+
+  install(TARGETS rftrace_c EXPORT rftraceTargets
+    LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
+
+  # The C test is compiled AS C to prove the header is C-compatible.
+  enable_language(C)
+  enable_testing()
+  add_executable(c_api_test tests/c_api_test.c)
+  set_target_properties(c_api_test PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+  target_link_libraries(c_api_test PRIVATE rftrace_c)
+  add_test(NAME c_api_test COMMAND c_api_test)
 endif()
 
 # ---- Install -----------------------------------------------------------------
