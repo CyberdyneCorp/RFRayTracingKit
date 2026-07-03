@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -43,15 +44,27 @@ class IBackend {
   virtual bool occluded(const Ray& ray) const = 0;
   virtual Backend kind() const = 0;
 
-  /// Batched closest-hit query. The default implementation loops over
-  /// closestHit(); accelerated backends (e.g. Metal) override it with a single
-  /// device dispatch. Results are index-aligned with `rays`.
+  /// Batched closest-hit query. Allocates and returns one `Hit` per ray,
+  /// index-aligned with `rays`. Thin wrapper over `closestHitBatchInto`.
   virtual std::vector<Hit> closestHitBatch(const std::vector<Ray>& rays) const;
 
   /// Batched occlusion query. `char` (not `bool`) so the result is a contiguous
   /// byte buffer that maps cleanly to GPU storage. Results are index-aligned
-  /// with `rays`.
+  /// with `rays`. Thin wrapper over `occludedBatchInto`.
   virtual std::vector<char> occludedBatch(const std::vector<Ray>& rays) const;
+
+  /// Caller-owned-output batched closest-hit: write one `Hit` per ray into `out`
+  /// (`out.size()` must equal `rays.size()`), index-aligned with `rays`. Unlike
+  /// `closestHitBatch`, this allocates nothing for the output, so a hot query
+  /// loop can reuse a single buffer across many batches. This is the primitive
+  /// accelerated backends override with a single device dispatch; the default
+  /// implementation loops over `closestHit()`.
+  virtual void closestHitBatchInto(const std::vector<Ray>& rays,
+                                   std::span<Hit> out) const;
+
+  /// Caller-owned-output batched occlusion query; see `closestHitBatchInto`.
+  virtual void occludedBatchInto(const std::vector<Ray>& rays,
+                                 std::span<char> out) const;
 };
 
 /// Create a backend. If the requested backend is unavailable and

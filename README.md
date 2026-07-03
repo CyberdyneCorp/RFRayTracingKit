@@ -159,6 +159,13 @@ the device buffers).
   ~120 Mray/s end-to-end; `closestHitBatch` is then bounded by allocating its returned
   `std::vector<Hit>` (~40 MB for 1M rays — an API cost borne equally by the CPU backend), not the
   device path.
+- **Caller-owned output API**: `IBackend::closestHitBatchInto(rays, std::span<Hit>)` and
+  `occludedBatchInto(rays, std::span<char>)` write one result per ray into a buffer the caller owns
+  and can reuse across batches, allocating nothing for the output. The vector-returning
+  `closestHitBatch`/`occludedBatch` are thin wrappers over these. Reusing one buffer removes the
+  per-call ~40 MB result allocation, so a hot GPU loop runs **~1.9× faster** closest-hit (≈48 →
+  ≈91 Mray/s, 1M rays on an RTX 5060), approaching the device-dispatch ceiling. The `Into` forms
+  overwrite every slot (misses included), so a reused/dirty buffer stays correct.
 
 > **Verified on NVIDIA hardware.** The backend and its parity suite have been compiled and run on
 > an NVIDIA GeForce RTX 5060 (Blackwell, `sm_120`) — CUDA Toolkit 12.0, driver 580.95.05, **OptiX
