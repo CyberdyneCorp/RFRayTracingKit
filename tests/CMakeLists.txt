@@ -47,6 +47,7 @@ add_executable(rftrace_tests
   test_parquet.cpp
   test_phase2_golden.cpp
   test_phase2_raylaunch_batch.cpp
+  test_receiver_grid.cpp
   test_phase7_regression.cpp
   test_diffraction.cpp
   test_multiedge_diffraction.cpp

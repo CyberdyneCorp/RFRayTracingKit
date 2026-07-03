@@ -59,7 +59,32 @@ struct Case {
   Scene scene;
   Transmitter tx;
   std::vector<Receiver> receivers;
+  int rays = 0;  ///< 0 -> use baseSettings default; else override ray budget.
 };
+
+// Dense receiver lattice in front of the wall scene (coverage-grid-like capture
+// set of hundreds of receivers), plus receivers placed far along the reflected
+// direction so their capture segments are the long (kFar) segments that stress
+// the grid clip, a duplicate-position pair, and a receiver near a cell boundary.
+// This is the case that actually exercises the spatial index at scale.
+std::vector<Receiver> latticeReceivers() {
+  std::vector<Receiver> rxs;
+  int id = 0;
+  for (int ix = 0; ix < 16; ++ix)
+    for (int iy = 0; iy < 12; ++iy)
+      for (int iz = 0; iz < 3; ++iz)
+        rxs.push_back(makeRx({10.0 + ix * 18.0, 10.0 + iy * 7.0, 5.0 + iz * 15.0},
+                             "g" + std::to_string(id++)));
+  // Far receivers (long capture segments through the clip).
+  rxs.push_back(makeRx({5000, 700, 900}, "far0"));
+  rxs.push_back(makeRx({-4000, -3000, 2000}, "far1"));
+  // Duplicate-position pair (shared cell, each must be captured once).
+  rxs.push_back(makeRx({100, 45, 20}, "dupA"));
+  rxs.push_back(makeRx({100, 45, 20}, "dupB"));
+  // Near a cell boundary for typical radii.
+  rxs.push_back(makeRx({100.0, 46.0, 20.0}, "bnd"));
+  return rxs;
+}
 
 std::vector<Case> makeCases() {
   std::vector<Case> cases;
@@ -70,6 +95,15 @@ std::vector<Case> makeCases() {
                    {makeRx({20, 10, 10}, "rx0"), makeRx({30, 30, 12}, "rx1")}});
   cases.push_back({"empty-los", Scene{}, makeTx({0, 0, 10}),
                    {makeRx({100, 0, 10}, "rx0")}});
+  // Spatial-index-at-scale case: hundreds of lattice receivers + far/dup/bnd.
+  // Reduced ray budget keeps the huge-radius (capture-all) combos fast while
+  // still exercising the grid halo/dedup and long-segment clip at scale.
+  cases.push_back({"lattice-wall", wallScene(), makeTx({100, 20, 20}),
+                   latticeReceivers(), 3000});
+  // Single receiver and zero receivers (degenerate grid paths).
+  cases.push_back({"single-rx", wallScene(), makeTx({100, 20, 20}),
+                   {makeRx({150, 30, 15}, "rx0")}});
+  cases.push_back({"zero-rx", wallScene(), makeTx({100, 20, 20}), {}});
   return cases;
 }
 
@@ -125,8 +159,11 @@ TEST(Phase2RayLaunchBatch, BatchedEqualsReferenceMatrix) {
     backend->build(c.scene.triangles());
     for (std::uint64_t seed : {1ull, 7ull, 42ull}) {
       for (int maxRefl : {0, 1, 2}) {
-        for (double captureRadius : {0.001, 3.0, 5.0}) {
+        // Tiny -> near-empty capture (clip/point path); moderate; huge -> nearly
+        // all receivers captured per segment (halo + dedup stress).
+        for (double captureRadius : {0.001, 0.5, 3.0, 5.0, 25.0, 1e4}) {
           SimulationSettings s = baseSettings();
+          if (c.rays > 0) s.raysPerTransmitter = c.rays;
           s.seed = seed;
           s.maxReflections = maxRefl;
           s.captureRadius = captureRadius;
