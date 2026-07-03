@@ -6,9 +6,9 @@
 // found). Keeping the factory behind this guard lets the rest of the code stay
 // backend-agnostic, exactly like metal_backend.hpp / opencl_backend.hpp.
 //
-// NOTE: this backend is UNVERIFIED on non-NVIDIA hosts — it is authored to the
-// CUDA/OptiX API and compiles only where a CUDA Toolkit + OptiX SDK exist. It
-// has not been compiled or run on the (Apple) development host.
+// NOTE: verified on an NVIDIA RTX 5060 with OptiX SDK 9.0.0 (parity suite passes).
+// Compiles only where a CUDA Toolkit + OptiX SDK exist; the SDK's ABI must be one
+// the installed driver implements or optixInit() fails (see README).
 
 #include <memory>
 

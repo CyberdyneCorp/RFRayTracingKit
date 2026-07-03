@@ -14,9 +14,9 @@
 // large, non-borderline discrepancies and are asserted to be zero. This mirrors
 // the Metal and OpenCL parity suites.
 //
-// UNVERIFIED on non-NVIDIA hosts: this suite has not been run — it requires an
-// NVIDIA GPU with OptiX. It is authored to match the CPU reference under the
-// documented parity rule.
+// Verified on an NVIDIA RTX 5060 (Blackwell, sm_120) with OptiX SDK 9.0.0: every
+// test below passes there. It requires an NVIDIA GPU with OptiX; on any other host
+// the tests GTEST_SKIP at runtime.
 #if RFTRACE_HAVE_CUDA
 
 #include <algorithm>

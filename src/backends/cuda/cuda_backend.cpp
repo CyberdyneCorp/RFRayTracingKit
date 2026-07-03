@@ -8,11 +8,12 @@
 // boundary as the Metal and OpenCL backends.
 //
 // ============================================================================
-// UNVERIFIED: This translation unit has NOT been compiled or run on the (Apple,
-// non-NVIDIA) development host — there is no CUDA Toolkit or OptiX SDK here. It
-// is authored to the documented CUDA runtime + OptiX 7.7/8 host API and mirrors
-// the structure of the working Metal backend. It must be validated on NVIDIA
-// hardware with an OptiX SDK before it can be trusted. The default build (CUDA
+// VERIFIED on NVIDIA hardware: compiled and run on a GeForce RTX 5060 (Blackwell,
+// sm_120) with CUDA Toolkit 12.0, driver 580.95.05, and OptiX SDK 9.0.0 — the
+// CPU-vs-CUDA parity suite (test_cuda_parity.cpp) passes. Written to the OptiX
+// 7.7/8 host API (no 9.x-only calls) and mirrors the Metal backend. The OptiX SDK
+// version must have an ABI the installed driver implements, or optixInit() fails
+// with OPTIX_ERROR_UNSUPPORTED_ABI_VERSION (see README). The default build (CUDA
 // OFF) never compiles this file.
 // ============================================================================
 

@@ -146,11 +146,17 @@ the device buffers).
   recipe. On a host without a CUDA Toolkit / OptiX SDK the configure step fails fast with a clear
   message.
 
-> **UNVERIFIED on non-NVIDIA hosts.** This backend is authored to the CUDA runtime + OptiX 7.7/8
-> host API and mirrors the working Metal backend, but it has **not been compiled or run** on the
-> Apple development host (no `nvcc` / OptiX). Enabling `-DRFTRACE_ENABLE_CUDA=ON` there fails at
-> configure time by design. It must be validated on NVIDIA + OptiX hardware; the default build
-> (flag off) never compiles any CUDA source.
+> **Verified on NVIDIA hardware.** The backend and its parity suite have been compiled and run on
+> an NVIDIA GeForce RTX 5060 (Blackwell, `sm_120`) — CUDA Toolkit 12.0, driver 580.95.05, **OptiX
+> SDK 9.0.0** — where all CPU-vs-CUDA parity tests pass. The default build (flag off) never
+> compiles any CUDA source.
+>
+> **OptiX SDK ↔ driver ABI:** `optixInit()` fails with `OPTIX_ERROR_UNSUPPORTED_ABI_VERSION` when
+> the SDK's `OPTIX_ABI_VERSION` exceeds what the installed driver's `libnvoptix` implements (query
+> it: `strings libnvoptix.so.* | grep 'ABI Version'`). The backend uses only OptiX ≥ 7.7 API, so
+> pick any SDK whose ABI the driver supports — e.g. driver 580.95.05 ships OptiX 9.0.2 (ABI 110),
+> so OptiX SDK 8.x–9.0.x work but 9.1 (ABI 118) does not. Availability is gated at runtime, so a
+> too-new SDK simply falls back to CPU rather than crashing.
 
 ## Phase 7 capabilities (advanced RF)
 

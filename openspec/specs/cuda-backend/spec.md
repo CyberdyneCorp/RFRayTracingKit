@@ -1,15 +1,22 @@
 # cuda-backend Specification
 
 ## Purpose
-TBD - created by archiving change phase5-cuda-backend. Update Purpose after archive.
+Provide an optional NVIDIA CUDA/OptiX GPU backend that accelerates ray traversal behind the shared
+`IBackend` contract, leaving RF physics, the scene model, the simulator, and result formats
+unchanged. It is an opt-in build (`RFTRACE_ENABLE_CUDA=ON`) validated against the CPU reference via a
+parity suite.
 ## Requirements
 ### Requirement: CUDA/OptiX GPU ray-traversal backend
 The library SHALL provide a CUDA/OptiX GPU backend that implements the `IBackend` interface using
 OptiX hardware ray tracing driven by CUDA kernels, compiled only when `RFTRACE_ENABLE_CUDA=ON` AND
 the CUDA Toolkit and OptiX SDK are found (defining `RFTRACE_HAVE_CUDA`). The backend SHALL accelerate
 ray traversal only and SHALL NOT change RF physics, the scene model, the simulator, or result
-formats. Because the development host has no NVIDIA GPU, CUDA Toolkit, or OptiX SDK, this backend is
-UNVERIFIED on non-NVIDIA hosts and SHALL be validated on NVIDIA hardware.
+formats. The backend has been validated on NVIDIA hardware (GeForce RTX 5060, CUDA 12.0, driver
+580.95.05, OptiX SDK 9.0.0) where the parity suite passes. The chosen OptiX SDK's `OPTIX_ABI_VERSION`
+MUST be one the installed driver's OptiX runtime implements; otherwise `optixInit()` fails with
+`OPTIX_ERROR_UNSUPPORTED_ABI_VERSION` and the backend reports itself unavailable (falling back to
+CPU). Because the backend uses only the OptiX ≥ 7.7 host API, any SDK whose ABI the driver supports
+is acceptable.
 
 #### Scenario: CUDA backend implements the backend contract
 - **WHEN** the project is built with `RFTRACE_ENABLE_CUDA=ON` on a host with CUDA + OptiX and a CUDA

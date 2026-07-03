@@ -10,6 +10,14 @@ cxx       := "clang++"
 # so `just build` works in both environments.
 vcpkg_arg := if env_var_or_default("VCPKG_ROOT", "") != "" { "-DCMAKE_TOOLCHAIN_FILE=" + env_var_or_default("VCPKG_ROOT", "") / "scripts/buildsystems/vcpkg.cmake" } else { "" }
 
+# Local, self-contained CUDA/OptiX build (see the `cuda-local` recipe). Override
+# either on the CLI (`just optix_dir=/path cuda-local`) or via the matching env var:
+#   VCPKG_ROOT         — a vcpkg checkout (default ~/vcpkg); its toolchain resolves deps
+#   OptiX_INSTALL_DIR  — OptiX SDK dir containing include/optix.h (default the 9.0.0 SDK)
+home_dir    := env_var_or_default("HOME", "")
+local_vcpkg := env_var_or_default("VCPKG_ROOT", home_dir / "vcpkg")
+optix_dir   := env_var_or_default("OptiX_INSTALL_DIR", home_dir / "optix/NVIDIA-OptiX-SDK-9.0.0-linux64-x86_64")
+
 # Show the available recipes (default).
 default:
     @just --list
@@ -135,6 +143,22 @@ cuda:
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/homebrew \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_CUDA=ON
+    cmake --build build-cuda -j
+    ctest --test-dir build-cuda --output-on-failure
+
+# Override with the optix_dir / local_vcpkg vars or OptiX_INSTALL_DIR / VCPKG_ROOT
+# env vars (see top of file). The OptiX SDK's ABI must be one the installed driver
+# implements — driver 580.95.05 ships OptiX 9.0.2 (ABI 110), so use SDK 8.x-9.0.x,
+# not 9.1 (ABI 118). Verified on an RTX 5060. Bootstrap vcpkg once: `git clone
+# https://github.com/microsoft/vcpkg ~/vcpkg && ~/vcpkg/bootstrap-vcpkg.sh`.
+# Self-contained CUDA/OptiX build on Linux: local vcpkg deps + explicit OptiX SDK, no root.
+cuda-local:
+    cmake -S . -B build-cuda \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_CXX_COMPILER={{cxx}} \
+      -DCMAKE_TOOLCHAIN_FILE={{local_vcpkg}}/scripts/buildsystems/vcpkg.cmake \
+      -DOptiX_INSTALL_DIR={{optix_dir}} \
+      -DRFTRACE_ENABLE_CUDA=ON
     cmake --build build-cuda -j
     ctest --test-dir build-cuda --output-on-failure
 
