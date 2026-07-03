@@ -193,4 +193,34 @@ inline double utdDiffractionLossDb(double v) {
   return std::max(0.0, -20.0 * std::log10(ratio));
 }
 
+/// Geometry-driven single-wedge UTD diffraction loss (dB) for a spherical-wave
+/// link over a straight edge. Unlike `utdDiffractionLossDb(v)` (a fixed-geometry
+/// half-plane parameterised by v), this takes the extracted wedge angles and the
+/// true leg lengths so the loss tracks the real link geometry:
+///
+///   L      = s·s'·sin²β0 / (s + s')                 (UTD distance parameter)
+///   A(s',s)= sqrt( s' / (s·(s'+s)) )                (spherical spreading)
+///   |E_d/E_fs| = |D|·A·(s+s')/s' = |D|·sqrt((s+s')/(s·s'))
+///   loss   = max(0, −20·log10 |E_d/E_fs|)
+///
+/// where D = utdWedgeCoefficient(φ, φ', β0, n, k, L, bc). NORMALIZATION: at
+/// β0 = π/2 the gain reduces to |D|/sqrt(L) — identical to the analytically
+/// pinned `utdDiffractionLossDb`, so a half-plane (n = 2) reproduces the ITU-R
+/// knife-edge curve exactly (no free scale factor). Returns 0 for degenerate
+/// (non-positive) leg lengths; the result is finite for all valid geometry.
+inline double utdWedgePathLossDb(double phi, double phiPrime, double beta0,
+                                 double wedgeN, double k, double s,
+                                 double sPrime,
+                                 WedgeBoundary bc = WedgeBoundary::Soft) {
+  if (s <= 0.0 || sPrime <= 0.0) return 0.0;
+  const double sinB0 = std::sin(beta0);
+  const double L = s * sPrime * sinB0 * sinB0 / (s + sPrime);
+  const UtdComplex D =
+      utdWedgeCoefficient(phi, phiPrime, beta0, wedgeN, k, L, bc);
+  const double A = std::sqrt(sPrime / (s * (s + sPrime)));
+  const double gain = std::abs(D) * A * (s + sPrime) / sPrime;
+  if (!(gain > 0.0) || !std::isfinite(gain)) return 0.0;
+  return std::max(0.0, -20.0 * std::log10(gain));
+}
+
 }  // namespace rftrace::rf

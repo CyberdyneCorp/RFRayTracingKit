@@ -1,24 +1,24 @@
 ## 1. Phase 1 — wedge-geometry extraction
 
-- [ ] 1.1 Build an edge→incident-faces map over `scene.triangles()`; classify a diffracting edge as free (one face → half-plane, `n = 2`) or a shared non-coplanar edge (real wedge).
-- [ ] 1.2 Compute the interior/exterior wedge angle from the two faces' dihedral (convex corner → exterior `= 2π − interior`), `n = exterior/π`; determine the o-face and 0/n-face orientation for consistent `phi`/`phiPrime`.
-- [ ] 1.3 Compute the UTD angles from tx/edge/rx: `phiPrime` (incidence), `phi` (diffraction) about the edge from the o-face, and `beta0` (skew of the incident ray to the edge tangent).
-- [ ] 1.4 Unit-test extraction on known geometry: a wall's free top edge → `n = 2`; a 90° box corner → `n = 1.5`; degenerate/coplanar shared edges skipped.
+- [x] 1.1 Build an edge→incident-faces map over `scene.triangles()`; classify a diffracting edge as free (one face → half-plane, `n = 2`) or a shared non-coplanar edge (real wedge).
+- [x] 1.2 Compute the interior/exterior wedge angle from the two faces' dihedral (convex corner → exterior `= 2π − interior`), `n = exterior/π`; determine the o-face and 0/n-face orientation for consistent `phi`/`phiPrime`.
+- [x] 1.3 Compute the UTD angles from tx/edge/rx: `phiPrime` (incidence), `phi` (diffraction) about the edge from the o-face, and `beta0` (skew of the incident ray to the edge tangent).
+- [x] 1.4 Unit-test extraction on known geometry: a wall's free top edge → `n = 2`; a 90° box corner → `n = 1.5`; degenerate/coplanar shared edges skipped.
 
 ## 2. Phase 1 — geometry-driven single-wedge loss
 
-- [ ] 2.1 Add `rf::utdWedgePathLossDb(...)` in `utd.hpp` (or a `rf/utd_geometry` unit): loss from `utdWedgeCoefficient(phi, phiPrime, beta0, n, k, L)` with `L = s·s'·sin²β0/(s+s')` and spreading `A(s',s) = sqrt(s'/(s(s'+s)))`, normalized so `n = 2` reproduces the knife-edge curve.
-- [ ] 2.2 Wire `diffractionLossDb(..., DiffractionModel::UTD)` in `src/simulator.cpp` to the geometry-driven path (extract wedge geometry for the chosen edge, compute the loss); keep knife-edge the default.
-- [ ] 2.3 Verify finiteness for all valid geometries (grazing, shadow boundary, deep shadow); clamp/guard degenerate cases.
+- [x] 2.1 Add `rf::utdWedgePathLossDb(...)` in `utd.hpp` (or a `rf/utd_geometry` unit): loss from `utdWedgeCoefficient(phi, phiPrime, beta0, n, k, L)` with `L = s·s'·sin²β0/(s+s')` and spreading `A(s',s) = sqrt(s'/(s(s'+s)))`, normalized so `n = 2` reproduces the knife-edge curve.
+- [x] 2.2 Wire `diffractionLossDb(..., DiffractionModel::UTD)` in `src/simulator.cpp` to the geometry-driven path (extract wedge geometry for the chosen edge, compute the loss); keep knife-edge the default.
+- [x] 2.3 Verify finiteness for all valid geometries (grazing, shadow boundary, deep shadow); clamp/guard degenerate cases.
 
 ## 3. Phase 1 — physical validation gates
 
-- [ ] 3.1 Reduce-to-knife-edge: a half-plane edge (`n = 2`) UTD loss matches ITU-R knife-edge across a v-sweep within the documented tolerance.
-- [ ] 3.2 Reciprocity: swapping tx↔rx gives equal loss (within tolerance).
-- [ ] 3.3 Shadow-boundary continuity: sweeping the receiver through the incident shadow boundary yields a continuous total (GO + diffracted) field — no step/spike.
-- [ ] 3.4 Monotonic shadowing: loss increases monotonically as the receiver moves deeper into shadow.
-- [ ] 3.5 Wedge-angle sensitivity: a sharper wedge diffracts differently than a half-plane, within physical bounds; determinism across repeated runs.
-- [ ] 3.6 Confirm the golden/regression suites stay green (knife-edge default unchanged; non-UTD results unaffected).
+- [x] 3.1 Reduce-to-knife-edge: a half-plane edge (`n = 2`) UTD loss matches ITU-R knife-edge across a v-sweep within the documented tolerance.
+- [x] 3.2 Reciprocity: swapping tx↔rx gives equal loss (within tolerance).
+- [x] 3.3 Shadow-boundary continuity: sweeping the receiver through the incident shadow boundary yields a continuous total (GO + diffracted) field — no step/spike.
+- [x] 3.4 Monotonic shadowing: loss increases monotonically as the receiver moves deeper into shadow.
+- [x] 3.5 Wedge-angle sensitivity: a sharper wedge diffracts differently than a half-plane, within physical bounds; determinism across repeated runs.
+- [x] 3.6 Confirm the golden/regression suites stay green (knife-edge default unchanged; non-UTD results unaffected).
 
 ## 4. Phase 2 — multi-edge UTD cascade
 
