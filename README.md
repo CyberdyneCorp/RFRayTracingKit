@@ -145,6 +145,12 @@ the device buffers).
   device PTX target with `-DCMAKE_CUDA_ARCHITECTURES`. CUDA is not part of the default `ci`
   recipe. On a host without a CUDA Toolkit / OptiX SDK the configure step fails fast with a clear
   message.
+- **Benchmark**: `rftrace_cuda_benchmark [triangles] [rays] [seed]` (example target) times CPU vs
+  CUDA for `build()`, `closestHitBatch()`, and `occludedBatch()` on a procedural city, with a
+  correctness cross-check. On an RTX 5060 (OptiX 9.0.0) over 1M rays: a 1M-triangle scene gives
+  ≈**450×** closest-hit and ≈**54×** occlusion speedup (100% hit/miss agreement); GPU throughput is
+  batch-transfer-bound (~23 Mray/s incl. per-call H2D/D2H), and the closest-hit speedup grows with
+  scene size as the CPU BVH slows. It runs CPU-only when no GPU is present.
 
 > **Verified on NVIDIA hardware.** The backend and its parity suite have been compiled and run on
 > an NVIDIA GeForce RTX 5060 (Blackwell, `sm_120`) — CUDA Toolkit 12.0, driver 580.95.05, **OptiX
