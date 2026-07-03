@@ -1,10 +1,13 @@
 # RFTraceKit developer tasks — run `just` (or `just --list`) to see everything.
-# Requires: cmake >= 3.25, clang++ or g++, ninja (for the gcc/asan recipes),
-# vcpkg (set VCPKG_ROOT; deps resolve from vcpkg.json), and `just` itself.
+# Requires: cmake >= 3.25, clang++ or g++, ninja, vcpkg (set VCPKG_ROOT; deps
+# resolve from vcpkg.json), and `just` itself.
 # Optional: Embree (for the `embree` validation backend recipe).
 
 build_dir := "build"
 cxx       := "clang++"
+# CMake generator, used by every configure recipe so build dirs never clash on a
+# generator mismatch. Override if Ninja is unavailable, e.g. `just generator="Unix Makefiles" build`.
+generator := "Ninja"
 # vcpkg toolchain — set VCPKG_ROOT to build against a vcpkg manifest. When unset,
 # the flag is omitted and CMake falls back to system packages (e.g. Homebrew),
 # so `just build` works in both environments.
@@ -25,7 +28,7 @@ default:
 # Configure the build (CPU backend). Pass extra cmake flags, e.g.
 #   just configure -DRFTRACE_ENABLE_EMBREE=ON
 configure *FLAGS:
-    cmake -S . -B {{build_dir}} \
+    cmake -S . -B {{build_dir}} -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CXX_COMPILER={{cxx}} \
       {{vcpkg_arg}} \
@@ -78,21 +81,21 @@ cli: build
 
 # Configure + build + test with debug symbols and assertions (separate dir).
 debug:
-    cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER={{cxx}} \
+    cmake -S . -B build-debug -G "{{generator}}" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER={{cxx}} \
       {{vcpkg_arg}}
     cmake --build build-debug -j
     ./build-debug/tests/rftrace_tests
 
 # Build + test with GCC (separate build dir).
 gcc:
-    cmake -S . -B build-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
+    cmake -S . -B build-gcc -G "{{generator}}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
       {{vcpkg_arg}}
     cmake --build build-gcc
     ./build-gcc/tests/rftrace_tests
 
 # Build + test under AddressSanitizer / UBSan (separate build dir).
 asan:
-    cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER={{cxx}} \
+    cmake -S . -B build-asan -G "{{generator}}" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER={{cxx}} \
       {{vcpkg_arg}} \
       -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
       -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
@@ -102,7 +105,7 @@ asan:
 # Build with the optional Embree CPU backend and run the suite (validation
 # baseline). Includes the CPU-vs-Embree parity suite (test_embree_parity.cpp).
 embree:
-    cmake -S . -B build-embree -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER={{cxx}} \
+    cmake -S . -B build-embree -G "{{generator}}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER={{cxx}} \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_EMBREE=ON
     cmake --build build-embree
     ctest --test-dir build-embree --output-on-failure
@@ -110,7 +113,7 @@ embree:
 # Build with the Metal GPU backend and run its suite (Apple + Metal only).
 # Not part of `ci`; tests skip at runtime when no Metal device is present.
 metal:
-    cmake -S . -B build-metal \
+    cmake -S . -B build-metal -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/homebrew \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_METAL=ON
@@ -121,7 +124,7 @@ metal:
 # Not part of `ci`; the parity tests skip at runtime when no OpenCL device is
 # present. Verified on Apple OpenCL 1.2 (M2 Max).
 opencl:
-    cmake -S . -B build-opencl \
+    cmake -S . -B build-opencl -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/homebrew \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_OPENCL=ON
@@ -130,7 +133,7 @@ opencl:
 
 # Build with GDAL (GeoTIFF/DEM) + Arrow (Parquet) IO and run their tests.
 geo:
-    cmake -S . -B build-geo \
+    cmake -S . -B build-geo -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/homebrew \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_GDAL=ON -DRFTRACE_ENABLE_PARQUET=ON
@@ -139,7 +142,7 @@ geo:
 
 # Build with ALL optional IO deps: GDAL + Arrow/Parquet + libosmium (OSM PBF).
 io:
-    cmake -S . -B build-io \
+    cmake -S . -B build-io -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/homebrew \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_GDAL=ON -DRFTRACE_ENABLE_PARQUET=ON \
@@ -151,7 +154,7 @@ io:
 # Not part of `ci`; expected to fail to configure on non-NVIDIA hosts. Set
 # OptiX_INSTALL_DIR to your OptiX SDK path.
 cuda:
-    cmake -S . -B build-cuda \
+    cmake -S . -B build-cuda -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/homebrew \
       {{vcpkg_arg}} -DRFTRACE_ENABLE_CUDA=ON
@@ -165,7 +168,7 @@ cuda:
 # https://github.com/microsoft/vcpkg ~/vcpkg && ~/vcpkg/bootstrap-vcpkg.sh`.
 # Self-contained CUDA/OptiX build on Linux: local vcpkg deps + explicit OptiX SDK, no root.
 cuda-local:
-    cmake -S . -B build-cuda \
+    cmake -S . -B build-cuda -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CXX_COMPILER={{cxx}} \
       -DCMAKE_TOOLCHAIN_FILE={{local_vcpkg}}/scripts/buildsystems/vcpkg.cmake \
@@ -178,7 +181,7 @@ cuda-local:
 # Configure + build librftrace_c and run the C test (compiled as C) through
 # CTest. Behind RFTRACE_ENABLE_C_API so the default build is unchanged.
 c-api:
-    cmake -S . -B build-capi \
+    cmake -S . -B build-capi -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_CXX_COMPILER={{cxx}} \
       {{vcpkg_arg}} \
@@ -188,7 +191,7 @@ c-api:
 
 # Build + run the C test under AddressSanitizer / UBSan (leak-checked).
 c-api-asan:
-    cmake -S . -B build-capi-asan \
+    cmake -S . -B build-capi-asan -G "{{generator}}" \
       -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_CXX_COMPILER={{cxx}} \
       {{vcpkg_arg}} \
@@ -209,7 +212,7 @@ py_path      := justfile_directory() / "bindings/python"
 # Configure + build the C++ core and the rftracekit._native extension. The
 # pybind11 CMake dir is resolved from the chosen interpreter at build time.
 py-build:
-    cmake -S . -B {{py_build_dir}} \
+    cmake -S . -B {{py_build_dir}} -G "{{generator}}" \
       -DCMAKE_PREFIX_PATH="/opt/homebrew;$({{py}} -c 'import pybind11; print(pybind11.get_cmake_dir())')" \
       -DPython3_EXECUTABLE="$({{py}} -c 'import sys; print(sys.executable)')" \
       -DPython_EXECUTABLE="$({{py}} -c 'import sys; print(sys.executable)')" \
