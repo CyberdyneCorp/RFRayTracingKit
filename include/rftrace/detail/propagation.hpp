@@ -285,6 +285,14 @@ std::vector<std::vector<RFPath>> rayLaunch(const Scene& scene,
                                            const SimulationSettings& settings,
                                            const PropagationContext* ctx = nullptr);
 
+/// Sequential per-ray reference implementation of `rayLaunch`, retained as the
+/// bit-for-bit equality oracle for the batched wavefront rewrite. Internal
+/// (detail-only) test symbol; not part of the public API.
+std::vector<std::vector<RFPath>> rayLaunchReference(
+    const Scene& scene, const IBackend& backend, const Transmitter& tx,
+    const std::vector<Receiver>& receivers, const SimulationSettings& settings,
+    const PropagationContext* ctx = nullptr);
+
 /// Single dominant knife-edge diffracted path (ITU-R P.526) for a (tx, rx) pair
 /// whose direct LOS is blocked. Searches the scene's open silhouette (boundary)
 /// edges for the strongest single-edge detour and returns it as a

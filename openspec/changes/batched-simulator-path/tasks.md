@@ -14,9 +14,9 @@
 
 ## 3. Phase 2 — Ray-launch wavefront batching
 
-- [ ] 3.1 Restructure `rayLaunch` from per-ray/all-bounces to per-bounce/all-live-rays: maintain a live-ray set, batch `closestHit` for all live rays at each bounce, scatter hits, advance/terminate rays, iterate to `maxReflections`.
-- [ ] 3.2 Preserve RNG draw order exactly (generate all initial ray directions up front as today) and capture-sphere accumulation order so paths and keys are unchanged (D4).
-- [ ] 3.3 Verify: ray-launch golden/coverage-multipath tests green; batched-vs-per-ray equality on ray-launch scenes; repeat-run determinism holds.
+- [x] 3.1 Restructure `rayLaunch` from per-ray/all-bounces to per-bounce/all-live-rays: maintain a live-ray set, batch `closestHit` for all live rays at each bounce, scatter hits, advance/terminate rays, iterate to `maxReflections`.
+- [x] 3.2 Preserve RNG draw order exactly (generate all initial ray directions up front as today) and capture-sphere accumulation order so paths and keys are unchanged (D4).
+- [x] 3.3 Verify: ray-launch golden/coverage-multipath tests green; batched-vs-per-ray equality on ray-launch scenes; repeat-run determinism holds.
 
 ## 4. Phase 3 — Image-method, diffraction, and terrain probes
 
