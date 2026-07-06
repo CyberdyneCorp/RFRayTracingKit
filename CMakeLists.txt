@@ -332,11 +332,39 @@ if(RFTRACE_ENABLE_C_API)
   add_test(NAME c_api_test COMMAND c_api_test)
 endif()
 
-# ---- Install -----------------------------------------------------------------
+# ---- Install + export (find_package(RFTraceKit)) -----------------------------
+# Produces an installable package with a generated RFTraceKitConfig.cmake so
+# downstream projects can `find_package(RFTraceKit)` and link `rftrace::rftrace`
+# (and `rftrace::rftrace_c` when the C API was built) without vendoring sources
+# or wiring include/link paths by hand. The config re-resolves the library's
+# transitive CONFIG-mode dependencies (Eigen3, assimp, nlohmann/json).
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 install(TARGETS rftrace EXPORT rftraceTargets
   LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# Export the target set (the C API target is added to the same set above when
+# RFTRACE_ENABLE_C_API is ON) under the rftrace:: namespace, matching the
+# in-tree aliases so consumers link the same target names.
+install(EXPORT rftraceTargets
+  FILE RFTraceKitTargets.cmake
+  NAMESPACE rftrace::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/RFTraceKit)
+
+configure_package_config_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RFTraceKitConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/RFTraceKitConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/RFTraceKit)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/RFTraceKitConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion)
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/RFTraceKitConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/RFTraceKitConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/RFTraceKit)
