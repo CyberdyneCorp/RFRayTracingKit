@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a new capability (RF model, ray backend, importer/exporter, binding, tooling)
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The use case or limitation motivating the request.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed capability
+      description: What you'd like RFTraceKit to do. Larger features are developed spec-first with OpenSpec — see CONTRIBUTING.md.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - RF physics / propagation model
+        - Ray backend (CPU / Embree / CUDA / OpenCL / Metal)
+        - Scene / geometry import (glTF/OBJ, OSM, GeoJSON, CityJSON, GeoTIFF/DEM)
+        - Results export (JSON/CSV/GeoJSON/glTF/CZML/3D Tiles/Parquet/GeoTIFF)
+        - Language bindings (Python / Swift / C API)
+        - CLI tooling
+        - Build / packaging / tooling
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or existing workarounds, if any.
