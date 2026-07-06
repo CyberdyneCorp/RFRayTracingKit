@@ -255,12 +255,36 @@ automatically (pinned) unless `-DRFTRACE_USE_SYSTEM_GTEST=ON`. Dependencies reso
 ### With `just` (recommended)
 
 ```bash
-just build      # configure + compile library, tests, examples
-just test       # build + run the test suite
-just ci         # clang tests + gcc + asan + openspec validate + examples
-just cli        # build + smoke-test the CLI tools
-just --list     # all recipes
+# Core (CPU backend — always available, no optional deps)
+just build          # configure + compile library, tests, examples
+just test           # build + run the unit + golden suite
+just ctest          # run the suite through CTest
+just examples       # build + run every self-verifying example
+just cli            # build + smoke-test the CLI tools
+just ci             # clang tests + gcc + asan + openspec validate + examples + cli
+just --list         # every recipe with its description
+
+# Probe the host and pick a backend
+just gpu-detect     # report usable CUDA / OpenCL / Metal backends (no build)
+
+# Optional acceleration backends (built into separate dirs, run their suites)
+just embree         # Intel Embree 4 CPU backend + CPU-vs-Embree parity suite
+just cuda-local     # CUDA / OptiX (self-contained: local vcpkg + explicit OptiX SDK)
+just metal          # Apple Metal backend (macOS only)
+just opencl         # OpenCL backend (needs an OpenCL device)
+
+# Optional IO, bindings, and packaging
+just geo            # GDAL (GeoTIFF/DEM) + Arrow/Parquet IO + tests
+just io             # all optional IO: GDAL + Parquet + libosmium (OSM PBF)
+just c-api          # build librftrace_c + run the C ABI test (Swift's integration point)
+just py-build       # build the rftracekit._native Python extension
+just py-test        # build + run the Python binding tests
+just install prefix=/your/prefix   # install headers + lib + CMake config
 ```
+
+Debug/sanitizer variants (`just debug`, `just gcc`, `just asan`, `just c-api-asan`) and
+single-target helpers (`just lib`, `just example <name>`) are also available — `just --list`
+enumerates them all.
 
 ### With CMake directly
 
