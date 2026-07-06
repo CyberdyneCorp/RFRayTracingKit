@@ -173,7 +173,7 @@ std::vector<Triangle> to_triangles(const double* v, size_t triangle_count) {
 extern "C" {
 
 // --- Version / diagnostics --------------------------------------------------
-const char* rftrace_version(void) { return "0.2.0"; }
+const char* rftrace_version(void) { return "0.3.0"; }
 int rftrace_abi_version(void) { return RFTRACE_ABI_VERSION; }
 const char* rftrace_last_error(void) { return g_last_error.c_str(); }
 

@@ -1,6 +1,6 @@
 {
   "name": "rftracekit",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Modern C++ ray tracing and RF propagation library (CPU reference)",
   "dependencies": [
     "eigen3",

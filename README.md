@@ -284,11 +284,41 @@ hardware/toolchain.
 The core uses a right-handed **Z-up** frame (Z = height/elevation), matching GIS/Cesium. glTF/OBJ
 meshes (Y-up) are rotated to Z-up on import.
 
+## Consuming as an installed library
+
+`just install prefix=/your/prefix` (or `cmake --install build --prefix …`) installs the headers,
+the static library, and a generated `RFTraceKitConfig.cmake`, so a downstream CMake project can:
+
+```cmake
+find_package(RFTraceKit CONFIG REQUIRED)
+target_link_libraries(your_app PRIVATE rftrace::rftrace)   # + rftrace::rftrace_c with the C API
+```
+
+The config re-resolves the library's transitive dependencies (Eigen3, Assimp, nlohmann/json), so
+no include/link paths are wired by hand. If those dependencies came from vcpkg, point the
+downstream configure at the same vcpkg toolchain (or `CMAKE_PREFIX_PATH`) that provided them.
+
+## Versioning & API stability
+
+RFTraceKit follows [Semantic Versioning](https://semver.org). The project is **pre-1.0
+(`0.x`)**: minor releases may still carry breaking API/ABI changes while the interface
+stabilizes — pin an exact version if you need stability. Notable changes are recorded in
+[CHANGELOG.md](CHANGELOG.md), and the installed CONFIG package ships a
+`RFTraceKitConfigVersion.cmake` with `SameMajorVersion` compatibility so `find_package` can
+select a compatible install. The core library and headers are the stable surface; the
+`extern "C"` C ABI (`RFTRACE_ENABLE_C_API`) is the intended integration point for other
+languages. Once the API is judged stable it will be tagged `1.0.0` and semver's
+break-only-on-major guarantee applies.
+
 ## Development
 
 Development is spec-driven with [OpenSpec](https://openspec.dev): living capability specs are in
 `openspec/specs/`, and each change is proposed, designed, and validated under `openspec/changes/`
-before implementation. Run `openspec validate --all --strict` to check them.
+before implementation. Run `openspec validate --all --strict` to check them. The
+[consumability spec](openspec/specs/consumability/spec.md) is the "usable by others" readiness
+rubric (install/build/packaging/CI/versioning/governance). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [SECURITY.md](SECURITY.md) for reporting
+vulnerabilities.
 
 ## License
 
